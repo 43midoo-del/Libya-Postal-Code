@@ -171,6 +171,7 @@
   var PROTECTED_LEVELS = { state: true, region: true };
   var GRID_LEVELS = { city: true, area: true };
   var ADD_CHILD_LEVELS = { area: true, street: true };
+  var CREATE_ON_SAVE_LEVELS = { region: true, city: true, area: true, street: true };
   var DRILL_CHILD = { state: 'region', region: 'city', city: 'area', area: 'street' };
   var MAX_SPAN = { city: 0.85, area: 0.35, street: 0.12 };
   var DISMISS_KEY = 'be_dismissed_grids';
@@ -258,6 +259,26 @@
     syncActionButtons();
   }
 
+  function canCreateOnSave() {
+    if (state.entityId) { return false; }
+    if (!CREATE_ON_SAVE_LEVELS[state.level]) { return false; }
+    if (!state.drillParentId) { return false; }
+    var nm = (nameIn && nameIn.value || '').trim();
+    if (!nm) { return false; }
+    return !!state.currentLayer;
+  }
+
+  function canSave() {
+    if (!state.currentLayer) { return false; }
+    if (state.entityId) { return true; }
+    return canCreateOnSave();
+  }
+
+  function updateSaveButton() {
+    if (!saveBtn) { return; }
+    saveBtn.disabled = !canSave();
+  }
+
   function provinceColor(prov) {
     return PROVINCE_COLORS[String(prov || '').toUpperCase()] || '#94a3b8';
   }
@@ -289,7 +310,13 @@
       addChildWrap.hidden = !show;
     }
     if (!show) {
-      cancelPlaceMode(false);
+      state.placeMode = null;
+      if (map.getContainer()) {
+        map.getContainer().classList.remove('be-map--placing');
+      }
+      if (addChildCancel) {
+        addChildCancel.hidden = true;
+      }
       return;
     }
     var parentLabel = level === 'area' ? 'المدينة' : 'الحي';
@@ -369,7 +396,7 @@
 
     cancelPlaceMode(false);
     setStatus('جارٍ إنشاء الكيان وحفظ الشبكة…', false);
-    fetch('index.php?r=boundary_entity_add_grid', { method: 'POST', body: fd, credentials: 'same-origin' })
+    fetch(apiUrl('boundary_entity_add_grid'), { method: 'POST', body: fd, credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!data || !data.ok) {
@@ -1087,7 +1114,7 @@
               : 'لا توجد حدود محفوظة — ارسم مضلعاً جديداً ثم احفظ.',
             false
           );
-          saveBtn.disabled = false;
+          updateSaveButton();
           syncDeleteButton();
           drawSiblingsLayer(state.drillParentId);
           if (state.drillParentId) {
@@ -1100,7 +1127,7 @@
           if (match.properties.color && colorIn) { colorIn.value = String(match.properties.color); }
         }
         installCurrentLayer(match);
-        saveBtn.disabled = false;
+        updateSaveButton();
         syncDeleteButton();
         setStatus('محمّل: ' + state.entityName + ' — يمكنك التحرير الآن.', false);
         drawSiblingsLayer(state.drillParentId);
@@ -1141,6 +1168,7 @@
       setStatus('شبكة مبدئية لـ "' + state.entityName + '" — عدّل المضلع ثم احفظ، أو احذف الشبكة لرسم جديد.', false);
     }
     syncActionButtons();
+    updateSaveButton();
   }
 
   function removeCurrentLayer() {
@@ -1152,6 +1180,7 @@
     state.currentIsGrid = false;
     refreshStats();
     syncActionButtons();
+    updateSaveButton();
   }
 
   /* New polygons drawn by Geoman become the current layer if no current layer exists. */
@@ -1168,10 +1197,12 @@
     e.layer.pm.enable({ allowSelfIntersection: false });
     e.layer.on('pm:edit pm:cut pm:rotateend', refreshStats);
     refreshStats();
-    saveBtn.disabled = !state.entityId;
+    updateSaveButton();
     syncActionButtons();
-    if (!state.entityId) {
-      setStatus('اختر كياناً أو أنشئ جديداً لربط الرسم.', true);
+    if (canCreateOnSave()) {
+      setStatus('تم رسم المضلع — اضغط «حفظ» لإنشاء «' + (nameIn.value || '').trim() + '» وحفظ الحدود.', false);
+    } else if (!state.entityId) {
+      setStatus('أدخل الاسم واختر الكيان الأب، أو اختر كياناً من القائمة لربط الرسم.', true);
     } else {
       setStatus('تم رسم مضلع — اضغط حفظ لربطه بـ "' + state.entityName + '".', false);
     }
@@ -1188,7 +1219,7 @@
       codeIn.value = '';
       codeIn.disabled = !allowNew;
       colorIn.disabled = !allowNew;
-      saveBtn.disabled = true;
+      updateSaveButton();
       syncDeleteButton();
       syncAddChildUi();
       state.entityId = 0;
@@ -1202,6 +1233,61 @@
     codeIn.disabled = false;
     colorIn.disabled = false;
     if (props.color) { colorIn.value = props.color; }
+    updateSaveButton();
+  }
+
+  function postBoundarySave(geom) {
+    var fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('level', state.level);
+    fd.append('entity_id', String(state.entityId));
+    fd.append('geojson', JSON.stringify(geom));
+    fd.append('name', nameIn.value || '');
+    fd.append('code', codeIn.value || '');
+    fd.append('color', colorIn.value || '');
+    return fetch(apiUrl('boundary_save'), { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) {
+        return parseJsonResponse(r).then(function (data) {
+          if (!r.ok || !data || data.ok === false) {
+            throw new Error((data && data.message) || 'فشل الحفظ.');
+          }
+          return data;
+        });
+      });
+  }
+
+  function createEntityThenSave(geom) {
+    var nm = (nameIn && nameIn.value || '').trim();
+    var fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('level', state.level);
+    fd.append('parent_id', String(state.drillParentId));
+    fd.append('name', nm);
+    fd.append('code', codeIn ? (codeIn.value || '') : '');
+    return fetch(apiUrl('boundary_entity_create'), { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) {
+        return parseJsonResponse(r).then(function (data) {
+          if (!r.ok || !data || data.ok === false) {
+            throw new Error((data && data.message) || 'فشل إنشاء الكيان.');
+          }
+          state.entityId = Number(data.id);
+          state.entityName = nm;
+          return postBoundarySave(geom);
+        });
+      });
+  }
+
+  function afterBoundarySaved(data) {
+    setStatus((data && data.message) || 'حُفِظَ.', false);
+    state.currentIsGrid = false;
+    undismissGrid(state.level, state.entityId);
+    syncDeleteButton();
+    loadOverview();
+    loadCurrentBoundary();
+    refreshEntityList().then(function () {
+      if (state.entityId && entitySel) { entitySel.value = String(state.entityId); }
+    });
+    updateSaveButton();
   }
 
   if (colorIn) {
@@ -1212,48 +1298,43 @@
   });
   }
 
+  if (nameIn) {
+    nameIn.addEventListener('input', function () {
+      updateSaveButton();
+      if (canCreateOnSave()) {
+        setStatus('اضغط «حفظ» لإنشاء «' + (nameIn.value || '').trim() + '» وحفظ الحدود.', false);
+      }
+    });
+  }
+
   if (saveBtn) {
   saveBtn.addEventListener('click', function () {
-    if (!state.entityId || !state.currentLayer) {
-      setStatus('اختر كياناً وارسم مضلعاً قبل الحفظ.', true);
+    if (!canSave()) {
+      if (!state.currentLayer) {
+        setStatus('ارسم مضلعاً على الخريطة قبل الحفظ.', true);
+      } else if (!state.entityId) {
+        setStatus('أدخل الاسم وتأكد من اختيار الكيان الأب (المدينة/الحي).', true);
+      } else {
+        setStatus('اختر كياناً وارسم مضلعاً قبل الحفظ.', true);
+      }
       return;
     }
     var gj = state.currentLayer.toGeoJSON();
     var geom = (gj && gj.geometry) ? gj.geometry : null;
     if (!geom) { setStatus('لا توجد هندسة صالحة للحفظ.', true); return; }
 
-    var fd = new FormData();
-    fd.append('csrf_token', csrf);
-    fd.append('level', state.level);
-    fd.append('entity_id', String(state.entityId));
-    fd.append('geojson', JSON.stringify(geom));
-    fd.append('name', nameIn.value || '');
-    fd.append('code', codeIn.value || '');
-    fd.append('color', colorIn.value || '');
-
     saveBtn.disabled = true;
-    setStatus('جارٍ الحفظ…', false);
-    fetch('index.php?r=boundary_save', { method: 'POST', body: fd, credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
+    setStatus(state.entityId ? 'جارٍ الحفظ…' : 'جارٍ إنشاء الكيان وحفظ الحدود…', false);
+    var savePromise = state.entityId
+      ? postBoundarySave(geom)
+      : createEntityThenSave(geom);
+    savePromise
       .then(function (data) {
-        saveBtn.disabled = false;
-        if (data && data.ok) {
-          setStatus(data.message || 'حُفِظَ.', false);
-          state.currentIsGrid = false;
-          undismissGrid(state.level, state.entityId);
-          syncDeleteButton();
-          loadOverview();
-          loadCurrentBoundary();
-          refreshEntityList().then(function () {
-            if (state.entityId && entitySel) { entitySel.value = String(state.entityId); }
-          });
-        } else {
-          setStatus((data && data.message) || 'فشل الحفظ.', true);
-        }
+        afterBoundarySaved(data);
       })
-      .catch(function () {
-        saveBtn.disabled = false;
-        setStatus('فشل الاتصال بالخادم.', true);
+      .catch(function (err) {
+        setStatus((err && err.message) || 'فشل الحفظ.', true);
+        updateSaveButton();
       });
   });
   }
@@ -1268,7 +1349,7 @@
       }
       dismissGrid(state.level, state.entityId);
       removeCurrentLayer();
-      saveBtn.disabled = false;
+      updateSaveButton();
       drawSiblingsLayer(state.drillParentId);
       if (state.drillParentId) {
         loadPickLayer(state.level, state.drillParentId);
@@ -1284,14 +1365,14 @@
     fd.append('csrf_token', csrf);
     fd.append('level', state.level);
     fd.append('entity_id', String(state.entityId));
-    fetch('index.php?r=boundary_delete', { method: 'POST', body: fd, credentials: 'same-origin' })
+    fetch(apiUrl('boundary_delete'), { method: 'POST', body: fd, credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data && data.ok) {
           undismissGrid(state.level, state.entityId);
           setStatus('حُذِفت الحدود — يمكن إعادة الشبكة أو رسم حدود جديدة.', false);
           removeCurrentLayer();
-          saveBtn.disabled = false;
+          updateSaveButton();
           refreshEntityList().then(function () {
             if (state.entityId && entitySel) { entitySel.value = String(state.entityId); }
             return drawSiblingsLayer(state.drillParentId);

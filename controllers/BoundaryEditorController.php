@@ -73,7 +73,12 @@ final class BoundaryEditorController extends BaseController
 
         /** @var array<int, array{id:int,name:string,state_id:int,code:?string}> $regionsById */
         $regionsById = [];
-        foreach ($pdo->query('SELECT id, name, state_id, code FROM regions ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        try {
+            $regionRows = $pdo->query('SELECT id, name, state_id, code FROM regions ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC);
+        } catch (\Throwable $e) {
+            $regionRows = $pdo->query('SELECT id, name, state_id FROM regions ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC);
+        }
+        foreach ($regionRows as $row) {
             $regionsById[(int) $row['id']] = $row;
         }
 
@@ -1202,85 +1207,94 @@ final class BoundaryEditorController extends BaseController
     private function fetchEntityRows(string $level, ?int $parentId): array
     {
         $pdo = Database::getInstance()->getPdo();
-        $hasBoundaries = $this->tableExists($pdo, 'boundaries');
-        $bCount = static function (string $lvl, string $idCol) use ($hasBoundaries): string {
-            if (!$hasBoundaries) {
-                return '0 AS has_boundary';
-            }
-
+        $bCount = static function (string $lvl, string $idCol): string {
             return '(SELECT COUNT(*) FROM boundaries b WHERE b.level = \'' . $lvl . '\' AND b.entity_id = ' . $idCol . ') AS has_boundary';
         };
 
-        return match ($level) {
-            'state' => $pdo->query(
-                'SELECT s.id, s.name, s.code, NULL AS parent_id, ' . $bCount('state', 's.id') . '
-                 FROM states s ORDER BY s.id ASC'
-            )->fetchAll(PDO::FETCH_ASSOC) ?: [],
-            'region' => $this->runEntityQuery(
-                $pdo,
-                'SELECT r.id, r.name, r.code, r.state_id AS parent_id, ' . $bCount('region', 'r.id') . '
-                 FROM regions r',
-                'r.state_id',
-                $parentId
-            ),
-            'city' => $this->runEntityQuery(
-                $pdo,
-                'SELECT c.id, c.name, c.code, c.region_id AS parent_id, ' . $bCount('city', 'c.id') . '
-                 FROM cities c',
-                'c.region_id',
-                $parentId
-            ),
-            'area' => $this->runEntityQuery(
-                $pdo,
-                'SELECT ' . $this->areasSelectColumns($pdo) . ', ' . $bCount('area', 'a.id') . '
-                 FROM areas a',
-                'a.city_id',
-                $parentId
-            ),
-            'street' => $this->runEntityQuery(
-                $pdo,
-                'SELECT s.id, s.name, s.code, s.area_id AS parent_id, ' . $bCount('street', 's.id') . '
-                 FROM streets s',
-                's.area_id',
-                $parentId
-            ),
-            default => [],
-        };
-    }
-
-    private function tableExists(PDO $pdo, string $table): bool
-    {
-        $st = $pdo->prepare(
-            'SELECT COUNT(*) FROM information_schema.tables
-             WHERE table_schema = DATABASE() AND table_name = :t'
-        );
-        $st->execute(['t' => $table]);
-
-        return (int) $st->fetchColumn() > 0;
-    }
-
-    private function columnExists(PDO $pdo, string $table, string $column): bool
-    {
-        $st = $pdo->prepare(
-            'SELECT COUNT(*) FROM information_schema.columns
-             WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c'
-        );
-        $st->execute(['t' => $table, 'c' => $column]);
-
-        return (int) $st->fetchColumn() > 0;
-    }
-
-    private function areasSelectColumns(PDO $pdo): string
-    {
-        $cols = 'a.id, a.name, a.city_id AS parent_id';
-        if ($this->columnExists($pdo, 'areas', 'code')) {
-            $cols = 'a.id, a.name, a.code, a.city_id AS parent_id';
+        try {
+            return match ($level) {
+                'state' => $pdo->query(
+                    'SELECT s.id, s.name, s.code, NULL AS parent_id, ' . $bCount('state', 's.id') . '
+                     FROM states s ORDER BY s.id ASC'
+                )->fetchAll(PDO::FETCH_ASSOC) ?: [],
+                'region' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT r.id, r.name, r.code, r.state_id AS parent_id, ' . $bCount('region', 'r.id') . '
+                     FROM regions r',
+                    'r.state_id',
+                    $parentId
+                ),
+                'city' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT c.id, c.name, c.code, c.region_id AS parent_id, ' . $bCount('city', 'c.id') . '
+                     FROM cities c',
+                    'c.region_id',
+                    $parentId
+                ),
+                'area' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT a.id, a.name, a.code, a.city_id AS parent_id, a.kind, ' . $bCount('area', 'a.id') . '
+                     FROM areas a',
+                    'a.city_id',
+                    $parentId
+                ),
+                'street' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT s.id, s.name, s.code, s.area_id AS parent_id, ' . $bCount('street', 's.id') . '
+                     FROM streets s',
+                    's.area_id',
+                    $parentId
+                ),
+                default => [],
+            };
+        } catch (\Throwable $e) {
+            return $this->fetchEntityRowsFallback($level, $parentId, $e);
         }
-        if ($this->columnExists($pdo, 'areas', 'kind')) {
-            $cols .= ', a.kind';
-        }
+    }
 
-        return $cols;
+    private function fetchEntityRowsFallback(string $level, ?int $parentId, \Throwable $prev): array
+    {
+        $pdo = Database::getInstance()->getPdo();
+
+        try {
+            return match ($level) {
+                'state' => $pdo->query(
+                    'SELECT s.id, s.name, s.code, NULL AS parent_id, 0 AS has_boundary
+                     FROM states s ORDER BY s.id ASC'
+                )->fetchAll(PDO::FETCH_ASSOC) ?: [],
+                'region' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT r.id, r.name, r.code, r.state_id AS parent_id, 0 AS has_boundary
+                     FROM regions r',
+                    'r.state_id',
+                    $parentId
+                ),
+                'city' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT c.id, c.name, c.code, c.region_id AS parent_id, 0 AS has_boundary
+                     FROM cities c',
+                    'c.region_id',
+                    $parentId
+                ),
+                'area' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT a.id, a.name, a.city_id AS parent_id, 0 AS has_boundary
+                     FROM areas a',
+                    'a.city_id',
+                    $parentId
+                ),
+                'street' => $this->runEntityQuery(
+                    $pdo,
+                    'SELECT s.id, s.name, s.code, s.area_id AS parent_id, 0 AS has_boundary
+                     FROM streets s',
+                    's.area_id',
+                    $parentId
+                ),
+                default => [],
+            };
+        } catch (\Throwable $e) {
+            throw new RuntimeException($prev->getMessage(), 0, $prev);
+        }
     }
 
     /**

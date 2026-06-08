@@ -1,167 +1,150 @@
-# Smart Postal — Libya (MVC / PHP / MySQL / Leaflet)
+# 🇱🇾 Libya Postal Code
 
-> نظام إدارة العناوين البريدية الذكي في ليبيا — تطبيق ويب باللغة العربية مبني على PHP خام بدون أُطر، MySQL، وLeaflet لعرض الخريطة.
+**نظام إدارة العناوين البريدية الذكي في ليبيا** — تطبيق ويب عربي (RTL) لإنشاء عناوين بريدية موحّدة، توليد أكواد خمسية، وعرضها على خريطة Leaflet.
 
-## 1. المتطلبات
+[![CI](https://github.com/43midoo-del/Libya-Postal-Code/actions/workflows/ci.yml/badge.svg)](https://github.com/43midoo-del/Libya-Postal-Code/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PHP](https://img.shields.io/badge/PHP-8%2B-777BB4?logo=php&logoColor=white)](https://www.php.net/)
+[![MySQL](https://img.shields.io/badge/MySQL-8%2B-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
 
-- **PHP 8+** (الإضافات: `pdo_mysql`, `mbstring`, `json`)
-- **MySQL 8+** (أو 5.7+ بـ utf8mb4)
-- خادم ويب (Apache / XAMPP) أو خادم PHP المدمج
+---
 
-## 2. التشغيل السريع محلياً
+## ✨ المزايا الرئيسية
 
-### 2.1 تهيئة قاعدة البيانات (الترتيب مهم)
+| الميزة | الوصف |
+|--------|--------|
+| 📮 كود بريدي خمسي | توليد تلقائي بصيغة `B 2-1-S 9` مرتبط بالتقسيم الإداري |
+| 🗺️ خرائط تفاعلية | Leaflet + GeoJSON للولايات والشعبيات والمدن |
+| 👥 أدوار متعددة | مدير، موظف، مواطن — صلاحيات محددة |
+| 🔍 بحث واستعلام | قائمة عناوين، بطاقة بريدية، QR |
+| ✏️ محرر حدود | رسم وتعديل حدود الشعبيات والمناطق |
+| 📴 بلاطات أوفلاين | دعم MBTiles لتشغيل الخريطة بدون إنترنت |
+| 📊 لوحة تحكم | إحصائيات ومخططات توزيع العناوين |
 
-نفّذ ملفات الـ SQL التالية **بهذا الترتيب** على خادم MySQL (مثلاً من phpMyAdmin):
+---
 
-| # | الملف | الوصف |
-|---|------|------|
-| 1 | `database.sql` | إنشاء قاعدة البيانات والجداول الأساسية. |
-| 2 | `database_seed.sql` | إنشاء مستخدم المدير الافتراضي (للتطوير فقط). |
-| 3 | `database_users_extras.sql` | (المرحلة 1) إضافة `updated_at` لجدول المستخدمين — قابل لإعادة التشغيل. |
-| 4 | `database_seed_admin_tree.sql` | (المرحلة 2) الولايات الثلاث + 22 شعبية + مدينة افتراضية + منطقة `area_id=1`. |
-| 5 | `database_addresses_updated_at.sql` | (المرحلة 4) إضافة `updated_at` لجدول العناوين — قابل لإعادة التشغيل. |
-| 6 | `database_postal_property_counters_only.sql` *(أو)* `database_phase6_postal_and_sample.sql` | عدّاد الكود البريدي الخمسي. |
-| 7 | `database_seed_shabiya_cities.sql` | (اختياري) قائمة مدن مرتبطة بكل شعبية للقوائم المنسدلة. |
-| 8 | `database_addresses_owner_name_nullable.sql` *(إن لزم)* | جعل اسم الحامل اختيارياً. |
-| 9 | `database_address_location_fields.sql` *(إن لزم)* | إضافة `wilayah/shabiya/locality/street_number` للجدول القديم. |
-| 10 | `database_phase7_pro_upgrade.sql` | (المرحلة 7) توسيع `pc_sector` إلى `VARCHAR(2)`، إضافة `code/lat/lng/population/kind` لـ `regions/cities/areas`، وإنشاء جداول `boundaries / streets / map_annotations / tile_sync_log`. قابل لإعادة التشغيل. |
+## 🚀 البدء السريع
 
-> ملاحظة: ملفات `database_users_extras.sql`، `database_seed_admin_tree.sql`، `database_addresses_updated_at.sql`، و`database_phase7_pro_upgrade.sql` كلها قابلة لإعادة التشغيل دون خطأ.
+### المتطلبات
 
-### 2.x سكربتات السطر الأمري
+- PHP 8+ (`pdo_mysql`, `mbstring`, `json`)
+- MySQL 8+ (أو 5.7+ مع `utf8mb4`)
+- Apache / XAMPP أو خادم PHP المدمج
 
-- `php scripts/seed_full_admin_data.php` — تعبئة الولايات/الشعبيات/المدن/المناطق من `data/libya-shabiyat.geojson` + `data/libya-cities-source.json` وحفظ حدود الشعبيات في جدول `boundaries`.
-- `php scripts/seed_mbtiles_from_osm.php [zmin] [zmax]` — تنزيل بلاطات أساس (افتراضي z5..z7) إلى `data/tiles/libya.mbtiles` ليعمل العرض أوفلاين.
+### 1. استنساخ المشروع
 
-### 2.2 تكوين الاتصال
-عدّل `config/database.php` (host, username, password, database).
-
-### 2.3 تشغيل الخادم
-من جذر المشروع:
 ```bash
-php -S localhost:8080
+git clone https://github.com/43midoo-del/Libya-Postal-Code.git
+cd Libya-Postal-Code
 ```
-أو شغّل `run-server.bat` على Windows.
 
-افتح: `http://localhost:8080/index.php?r=login`
+### 2. قاعدة البيانات
 
-### 2.4 بيانات اختبار للوحة (اختياري)
+نفّذ ملفات SQL بالترتيب — التفاصيل الكاملة في **[database/README.md](database/README.md)**:
+
+```
+database/schema/01_base.sql
+database/seeds/01_admin_user.sql
+database/migrations/001_users_updated_at.sql
+database/seeds/02_admin_tree.sql
+... (انظر الدليل)
+```
+
+### 3. الإعداد
+
 ```bash
-php scripts/seed_demo_data.php
+cp config/database.example.php config/database.php   # Linux/macOS
+# أو انسخ الملف يدوياً على Windows
 ```
-يُنشئ ~30 عنواناً موزّعاً على الولايات الثلاث حتى تظهر المخططات والإحصائيات بشكل لائق في العرض النهائي.
 
-## 3. الحساب الافتراضي
+### 4. التشغيل
+
+```bash
+php -S 127.0.0.1:8080 -t .
+```
+
+أو `run-server.bat` على Windows → افتح `http://127.0.0.1:8080/index.php?r=login`
+
+### حساب التطوير
 
 | الحقل | القيمة |
 |-------|--------|
 | البريد | `admin@libyapostal.local` |
-| كلمة المرور | `admin123` (غيّرها في الإنتاج) |
+| كلمة المرور | `admin123` ⚠️ غيّرها في الإنتاج |
 
-المواطن يستطيع إنشاء حسابه بنفسه من صفحة `?r=register`.
+---
 
-## 4. الأدوار والصلاحيات
+## 📁 هيكل المشروع
 
-| الميزة | المدير | الموظف | المواطن |
-|--------|:------:|:------:|:-------:|
-| تسجيل دخول | ✓ | ✓ | ✓ |
-| تسجيل حساب جديد (للمواطن فقط) | — | — | ✓ |
-| تعديل بياناتي الشخصية + كلمة المرور | ✓ | ✓ | ✓ |
-| لوحة التحكم والإحصائيات | ✓ | ✓ | ✓ |
-| خريطة الاستكشاف + تحليل الموقع بالنقر | ✓ | ✓ | ✓ |
-| قائمة العناوين والبحث | ✓ | ✓ | ✓ |
-| إضافة / تعديل / حذف عناوين | ✓ | ✓ | حذف عنوانه فقط |
-| عرض تفاصيل عنوان | ✓ | ✓ | عنوانه فقط |
+```
+Libya-Postal-Code/
+├── .github/              # قوالب Issues/PR + CI
+├── config/               # إعدادات التطبيق وقاعدة البيانات والخريطة
+├── controllers/          # معالجة الطلبات (MVC)
+├── models/               # طبقة البيانات
+├── views/                # قوالب PHP عربية
+├── includes/             # خدمات مشتركة (Auth, CSRF, PostalCode)
+├── js/ + css/ + public/  # واجهة أمامية + PWA
+├── data/                 # GeoJSON (حدود ليبيا والمدن)
+├── database/             # schema + seeds + migrations
+├── docs/                 # SRS، تقارير، دليل النشر
+├── scripts/              # بذور وبناء GeoJSON
+├── tools/                # أدوات صيانة لمرة واحدة
+├── index.php             # Front controller (?r=)
+└── README.md
+```
+
+---
+
+## 🔐 الأدوار والصلاحيات
+
+| الميزة | مدير | موظف | مواطن |
+|--------|:----:|:----:|:-----:|
+| تسجيل دخول / حساب جديد | ✓ | ✓ | ✓ |
+| لوحة التحكم | ✓ | ✓ | ✓ |
+| إدارة العناوين | ✓ | ✓ | محدود |
 | إدارة المستخدمين | ✓ | — | — |
-| إدارة التقسيم الإداري + رفع GeoJSON | ✓ | — | — |
+| التقسيم الإداري + GeoJSON | ✓ | — | — |
+| محرر الحدود | ✓ | — | — |
 
-## 5. جدول المسارات (Routes)
+---
 
-كل المسارات على شكل `index.php?r=<name>`.
+## 🛣️ المسارات (Routes)
 
-### مصادقة وحساب
+كل المسارات عبر `index.php?r=<name>`. أمثلة:
+
 | المسار | الوصف |
-|--------|------|
-| `login` / `auth` / `logout` | شاشة الدخول وإنهاء الجلسة. |
-| `register` / `register_store` | تسجيل حساب مواطن جديد. |
-| `profile` / `profile_update` / `profile_password` | الملف الشخصي وتغيير كلمة المرور. |
+|--------|--------|
+| `login` / `register` | مصادقة |
+| `dashboard` | لوحة التحكم |
+| `addresses` | قائمة العناوين |
+| `address_new` | إضافة عنوان |
+| `postal_lookup` | استعلام بريدي |
+| `admin_geo` | إدارة الولايات والشعبيات |
+| `boundary_editor` | محرر الحدود |
 
-### إدارة المستخدمين (مدير فقط)
-| المسار | الوصف |
-|--------|------|
-| `users` | قائمة وفلترة المستخدمين. |
-| `user_new` / `user_store` | إضافة. |
-| `user_edit` / `user_update` | تعديل. |
-| `user_delete` | حذف. |
+الجدول الكامل في [docs/architecture.md](docs/architecture.md).
 
-### العناوين
-| المسار | الوصف |
-|--------|------|
-| `addresses` | قائمة + فلترة + خريطة جانبية. |
-| `addresses_json` | JSON للقراءة فقط (يستخدمه طبقة العناوين على الخريطة المستقلة). |
-| `address_new` / `address_store` | إضافة عنوان (موظف / مدير). |
-| `address_show` | صفحة تفاصيل (محمية بملكية للمواطن). |
-| `address_edit` / `address_full_update` | تعديل كامل: موقع + كل أجزاء الكود + بيانات (موظف / مدير). |
-| `address_update` | تحديث **سريع** للبيانات الوصفية فقط (اسم/نوع/شقة). |
-| `address_delete` | حذف. |
-| `address_api` | JSON: create/update/delete (واجهة `add-address`). |
-| `api_shabiya_cities` | JSON: مدن الشعبية لقوائم الإكمال. |
+---
 
-### الخرائط
-| المسار | الوصف |
-|--------|------|
-| `map` | خريطة الاستكشاف (اختيار ولاية → شعبية → مدينة + نقرة → معلومات الموقع). |
-| `map_resolve` | JSON: يستقبل (lat, lng) ويرجع (الولاية، الشعبية، أقرب مدينة، area_id). |
+## 📚 الوثائق
 
-### إدارة التقسيم الإداري (مدير فقط)
-| المسار | الوصف |
-|--------|------|
-| `admin_geo` | الواجهة (تبويبات: ولايات / شعبيات / مدن / مناطق / ملفات GeoJSON). |
-| `admin_geo_state_save` / `_delete` | الولايات. |
-| `admin_geo_region_save` / `_delete` | الشعبيات. |
-| `admin_geo_city_save` / `_delete` | المدن. |
-| `admin_geo_area_save` / `_delete` | المناطق. |
-| `admin_geojson_upload` | رفع ملف GeoJSON إلى `data/`. |
+| الوثيقة | الرابط |
+|---------|--------|
+| متطلبات النظام (SRS) | [docs/srs.md](docs/srs.md) |
+| هيكلية التطبيق | [docs/architecture.md](docs/architecture.md) |
+| دليل النشر | [docs/deployment.md](docs/deployment.md) |
+| مذكرة التنفيذ (عربي) | [docs/ar/implementation-memo.md](docs/ar/implementation-memo.md) |
+| تقرير المدير (عربي) | [docs/ar/project-manager-report.md](docs/ar/project-manager-report.md) |
 
-## 6. هيكلية المشروع (MVC)
+---
 
-```
-Projict/
-├── index.php                    # واجهة موحّدة لكل المسارات (?r=...)
-├── config/                      # app, database, map, libya_admin, postal_map_regions
-├── controllers/                 # Auth, Dashboard, Users, AdminGeo, Map, Address(es)
-├── models/                      # User, State, Region, City, Area, Address, AddressSearch,
-│                                # LibyaAdmin, ShabiyaCity, Statistics
-├── views/
-│   ├── auth/{login,register}.php
-│   ├── dashboard/index.php
-│   ├── users/{index,create,edit,profile}.php
-│   ├── admin/geo/index.php
-│   ├── addresses/{index,create,edit,show}.php
-│   ├── map/index.php
-│   ├── error/forbidden.php
-│   └── partials/                # head, foot, main_nav, app_header, flash
-├── includes/                    # Database, SessionAuth, Csrf, Flash, PostalCodeService, GeoBounds
-├── js/                          # map/{core,labels,shabiyat,parcel,explore}.js +
-│                                # addresses/{form,save,edit,full_edit}.js +
-│                                # dashboard_charts.js + addresses_index.js
-├── css/app.css                  # ستايل موحّد RTL
-├── data/                        # GeoJSON (libya-shabiyat / libya-mask-inner-ring / cities)
-└── scripts/seed_demo_data.php   # ~30 عنواناً تجريبياً للعرض
-```
+## 🤝 المساهمة
 
-## 7. سيناريو End-to-End للعرض النهائي
+راجع [CONTRIBUTING.md](CONTRIBUTING.md). للأمان راجع [SECURITY.md](SECURITY.md).
 
-1. **مواطن** يفتح `?r=register` ويُسجّل بنفسه (الدور `citizen` يُفرض من الخادم).
-2. **مدير** يدخل بـ `admin@libyapostal.local`، يفتح `?r=users` ويُنشئ موظفاً جديداً.
-3. **موظف** يدخل، يفتح `?r=address_new`، يختار الولاية والشعبية، يكبّر على الخريطة وينقر لتسجيل الإحداثيات، يحفظ → يظهر الكود البريدي والـ QR.
-4. **مدير** يفتح `?r=admin_geo&tab=regions` ويضيف شعبية جديدة → يلاحظها فوراً في القائمة المنسدلة في صفحة الإضافة.
-5. **مواطن** يفتح `?r=map`، يختار شعبية، ينقر على نقطة → تظهر بطاقة بمعلومات الموقع المُحلّل (الولاية، رمز المحافظة، الشعبية، أقرب مدينة).
-6. **مدير** يفتح `?r=dashboard` ويرى المخططات: توزيع الولايات، أكثر 10 شعبيات، آخر 7 أيام، توزيع الأنواع.
+---
 
-## 8. وثائق إضافية
+## 📄 الترخيص
 
-- `srs_libyan_smart_postal_address_system (2).md` — وثيقة المتطلبات (مُحدّثة بصيغة الكود البريدي الفعلية `B 2-1-S 9`).
-- `مذكرة-التنفيذ-تفصيلية.md` — مذكّرة تنفيذ مُفصّلة بالعربية.
-- `تقرير 1.md` — تقرير مُختصر.
+[MIT License](LICENSE) — حر للاستخدام والتعديل مع الإبقاء على إشعار الترخيص.

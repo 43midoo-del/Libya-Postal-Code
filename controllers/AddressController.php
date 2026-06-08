@@ -229,7 +229,7 @@ final class AddressController extends BaseController
             http_response_code(500);
             echo json_encode([
                 'ok'      => false,
-                'message' => 'تعذّر قراءة جدول المدن. نفّذ database_seed_shabiya_cities.sql على قاعدة البيانات.',
+                'message' => 'تعذّر قراءة جدول المدن. نفّذ database/seeds/03_shabiya_cities.sql على قاعدة البيانات.',
             ], JSON_UNESCAPED_UNICODE);
 
             return;

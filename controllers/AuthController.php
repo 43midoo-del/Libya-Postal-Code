@@ -46,7 +46,7 @@ final class AuthController extends BaseController
             $user = User::findByEmail($email);
         } catch (\Throwable $e) {
             $app = require \APP_ROOT . '/config/app.php';
-            $message = 'تعذّر الاتصال بقاعدة البيانات. تأكد من تشغيل MySQL وصحة config/database.php واستيراد database.sql.';
+            $message = 'تعذّر الاتصال بقاعدة البيانات. تأكد من تشغيل MySQL وصحة config/database.php واستيراد database/schema/01_base.sql.';
             if (($app['debug'] ?? false) === true || getenv('APP_DEBUG') === '1') {
                 $message .= ' (' . $e->getMessage() . ')';
             }

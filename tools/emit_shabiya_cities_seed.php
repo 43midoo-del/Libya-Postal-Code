@@ -4,7 +4,7 @@
  * ومركز رسم خريطة لكل رمز من config/postal_map_regions.php (+ مدن مساعدة بإحداثيات تقريبة).
  *
  * تشغيل (من مجلد tools):
- *   php emit_shabiya_cities_seed.php > ../database_seed_shabiya_cities.sql
+ *   php emit_shabiya_cities_seed.php > ../database/seeds/03_shabiya_cities.sql
  */
 declare(strict_types=1);
 

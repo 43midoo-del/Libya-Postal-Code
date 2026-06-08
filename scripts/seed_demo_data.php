@@ -7,7 +7,7 @@
  *   php scripts/seed_demo_data.php
  *
  * Requires:
- *  - database.sql + database_seed_admin_tree.sql applied
+ *  - database/schema/01_base.sql + database/seeds/02_admin_tree.sql applied
  *  - at least one user (admin) to attribute addresses to (uses created_by = id 1)
  */
 declare(strict_types=1);

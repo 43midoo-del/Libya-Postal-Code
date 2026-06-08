@@ -16,10 +16,10 @@ composer.lock
 !.env.example
 
 # Local database dumps & generated tiles (large / machine-specific)
-data/tiles/
+data/tiles/*
+!data/tiles/.gitkeep
 *.mbtiles
-database/*.sql
-!database/.gitkeep
+.env
 
 # Logs & temp
 *.log
