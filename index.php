@@ -28,7 +28,7 @@ $route = isset($_GET['r']) ? (string) $_GET['r'] : 'home';
 $jsonApiRoutes = [
     'boundary_overview', 'boundary_list', 'boundary_entity_loc', 'boundary_entities',
     'boundary_save', 'boundary_delete', 'boundary_entity_create', 'boundary_entity_add_grid',
-    'boundary_export', 'addresses_json', 'api_shabiya_cities', 'address_api',
+    'boundary_export', 'addresses_json', 'api_shabiya_cities', 'address_city_blocks', 'address_api',
     'postal_lookup_api', 'tile_sync_status',
 ];
 if (!in_array($route, $jsonApiRoutes, true)) {
@@ -62,6 +62,7 @@ try {
         'address_update' => (new AddressController())->update(),
         'address_delete' => (new AddressController())->delete(),
         'api_shabiya_cities' => (new AddressController())->apiShabiyaCities(),
+        'address_city_blocks' => (new AddressController())->apiCityBlocks(),
         'address_api' => (new AddressController())->api(),
         'users' => (new UsersController())->index(),
         'user_new' => (new UsersController())->newForm(),

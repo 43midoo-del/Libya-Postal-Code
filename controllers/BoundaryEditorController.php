@@ -215,7 +215,9 @@ final class BoundaryEditorController extends BaseController
         if ($level === 'state' && empty($fc['features'])) {
             $fc = $this->stateGeoJsonFallback();
         }
-        if ($level === 'region' && empty($fc['features'])) {
+        if ($level === 'region' && $parentId !== null) {
+            $fc = $this->regionListWithGrid($parentId);
+        } elseif ($level === 'region' && empty($fc['features'])) {
             $fc = $this->regionGeoJsonFallback($parentId);
         }
         if ($level === 'city' && $parentId !== null) {
@@ -364,6 +366,70 @@ final class BoundaryEditorController extends BaseController
         return ['type' => 'FeatureCollection', 'features' => $features];
     }
 
+    /**
+     * Copy saved boundary metadata (color, code) onto a generated grid cell.
+     *
+     * @param array<string,mixed> $gridFeature
+     * @param array<string,mixed> $savedFeature
+     * @return array<string,mixed>
+     */
+    private function mergeGridFeatureMeta(array $gridFeature, array $savedFeature): array
+    {
+        $savedProps = is_array($savedFeature['properties'] ?? null) ? $savedFeature['properties'] : [];
+        $props = is_array($gridFeature['properties'] ?? null) ? $gridFeature['properties'] : [];
+        if (!empty($savedProps['color'])) {
+            $props['color'] = (string) $savedProps['color'];
+        }
+        if (!empty($savedProps['code'])) {
+            $props['code'] = (string) $savedProps['code'];
+        }
+        $gridFeature['properties'] = $props;
+
+        return $gridFeature;
+    }
+
+    /** @return array{type:string, features:list<array<string,mixed>>} */
+    private function regionListWithGrid(int $stateId): array
+    {
+        $saved = Boundary::asFeatureCollection('region', $stateId);
+        $savedById = [];
+        foreach ($saved['features'] as $feature) {
+            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
+            if ($eid > 0) {
+                $savedById[$eid] = $feature;
+            }
+        }
+        $fallback = $this->regionGeoJsonFallback($stateId);
+        $out = [];
+        $used = [];
+        foreach ($fallback['features'] as $feature) {
+            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
+            if ($eid > 0 && isset($savedById[$eid])) {
+                $savedFeat = $savedById[$eid];
+                $savedGeom = is_array($savedFeat['geometry'] ?? null) ? $savedFeat['geometry'] : null;
+                if ($savedGeom !== null && !$this->geometrySpanTooLarge('region', $savedGeom)) {
+                    $out[] = $savedFeat;
+                } else {
+                    $out[] = $this->mergeGridFeatureMeta($feature, $savedFeat);
+                }
+                $used[$eid] = true;
+                continue;
+            }
+            $out[] = $feature;
+            if ($eid > 0) {
+                $used[$eid] = true;
+            }
+        }
+        foreach ($saved['features'] as $feature) {
+            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
+            if ($eid > 0 && !isset($used[$eid])) {
+                $out[] = $feature;
+            }
+        }
+
+        return ['type' => 'FeatureCollection', 'features' => $out];
+    }
+
     /** @return array{type:string, features:list<array<string,mixed>>} */
     private function cityListWithGrid(int $regionId): array
     {
@@ -381,7 +447,7 @@ final class BoundaryEditorController extends BaseController
             $geom = is_array($feature['geometry'] ?? null) ? $feature['geometry'] : null;
             if ($geom !== null && $this->geometrySpanTooLarge('city', $geom)) {
                 if ($eid > 0 && isset($gridById[$eid])) {
-                    $out[] = $gridById[$eid];
+                    $out[] = $this->mergeGridFeatureMeta($gridById[$eid], $feature);
                     $used[$eid] = true;
                 }
                 continue;
@@ -405,13 +471,16 @@ final class BoundaryEditorController extends BaseController
     private function areaListWithGrid(int $cityId): array
     {
         $saved = Boundary::asFeatureCollection('area', $cityId);
-        $savedIds = [];
+        $savedById = [];
         foreach ($saved['features'] as $feature) {
-            $savedIds[(int) ($feature['properties']['entity_id'] ?? 0)] = true;
+            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
+            if ($eid > 0) {
+                $savedById[$eid] = $feature;
+            }
         }
         foreach ($this->areaGridFallback($cityId)['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            if ($eid > 0 && !isset($savedIds[$eid])) {
+            if ($eid > 0 && !isset($savedById[$eid])) {
                 $saved['features'][] = $feature;
             }
         }

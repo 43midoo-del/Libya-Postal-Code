@@ -196,8 +196,8 @@ $csrf = \App\Csrf::getToken();
                 <div class="addr-form-card" <?= $editRow !== null ? ' hidden' : '' ?>>
                 <form id="addr-new-form" class="addr-form addr-form--mgr addr-form--compact addr-form--grid" action="index.php?r=address_store" method="post" novalidate>
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
-                    <input type="hidden" name="pc_province" id="pc_province" value="T">
-                    <input type="hidden" name="pc_area" id="pc_area" value="1">
+                    <input type="hidden" name="pc_province" id="pc_province" value="">
+                    <input type="hidden" name="pc_area" id="pc_area" value="">
                     <input type="hidden" name="pc_city" id="pc_city" value="1">
                     <input type="hidden" name="street_number" id="street_number" value="">
                     <input type="hidden" name="apartment_number" id="apartment_number" value="">
@@ -206,24 +206,17 @@ $csrf = \App\Csrf::getToken();
                         <div class="addr-form__cell">
                             <label class="form-label" for="addr-wilayah">الولاية</label>
                             <select class="form-input form-input--mgr form-input--mgr-tight" id="addr-wilayah" required autocomplete="off">
+                                <option value="" selected>—</option>
                                 <option value="barqa"><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('barqa'), ENT_QUOTES, 'UTF-8') ?></option>
-                                <option value="tripolitania" selected><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('tripolitania'), ENT_QUOTES, 'UTF-8') ?></option>
+                                <option value="tripolitania"><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('tripolitania'), ENT_QUOTES, 'UTF-8') ?></option>
                                 <option value="fezzan"><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('fezzan'), ENT_QUOTES, 'UTF-8') ?></option>
                             </select>
                         </div>
                         <div class="addr-form__cell">
                             <label class="form-label" for="shabiya">الشعبية</label>
-                            <select class="form-input form-input--mgr form-input--mgr-tight" name="shabiya" id="shabiya" required autocomplete="off"><?php
-                                foreach ($initialShabiyatTrip as $shOpt) {
-                                    $nm = (string) ($shOpt['name'] ?? '');
-                                    $cd = trim((string) ($shOpt['code'] ?? ''));
-                                    if ($nm === '') {
-                                        continue;
-                                    }
-                                    $lab = $cd !== '' ? $nm . ' (' . $cd . ')' : $nm;
-                                    ?><option value="<?= htmlspecialchars($nm, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($lab, ENT_QUOTES, 'UTF-8') ?></option><?php
-                                }
-                            ?></select>
+                            <select class="form-input form-input--mgr form-input--mgr-tight" name="shabiya" id="shabiya" required autocomplete="off">
+                                <option value="" selected>—</option>
+                            </select>
                         </div>
                         <div class="addr-form__cell">
                             <label class="form-label" for="addr-city-area">المدينة / المنطقة</label>
@@ -231,16 +224,14 @@ $csrf = \App\Csrf::getToken();
                             <datalist id="addr-city-area-list"></datalist>
                         </div>
                     </div>
-                    <div class="addr-form__row addr-form__row--2 addr-form__row--sector">
-                        <div class="addr-form__cell">
-                            <label class="form-label" for="pc_sector">رمز الحي</label>
-                            <input class="form-input form-input--mgr form-input--mgr-tight mono" type="text" name="pc_sector" id="pc_sector" required maxlength="2" value="S" dir="ltr" pattern="[A-Za-z0-9]{1,2}" inputmode="text" title="1–2 خانة أبجدرقمية (مثل: S، SA، A1، 9)">
-                        </div>
-                        <div class="addr-form__cell">
-                            <label class="form-label" for="addr-neighborhood">اسم الحي / المنطقة</label>
-                            <input class="form-input form-input--mgr form-input--mgr-tight" type="text" id="addr-neighborhood" maxlength="200" placeholder="داخل المدينة" autocomplete="off">
-                        </div>
+                    <div class="addr-form__row">
+                        <label class="form-label" for="addr-neighborhood">الحي / الشارع</label>
+                        <select class="form-input form-input--mgr form-input--mgr-tight" id="addr-neighborhood" autocomplete="off">
+                            <option value="">— اختر الحي أو الشارع —</option>
+                        </select>
+                        <span class="field-help muted">تُحمَّل من محرر الحدود بعد اختيار المدينة</span>
                     </div>
+                    <input type="hidden" name="pc_sector" id="pc_sector" value="S">
                     <div class="addr-form__row">
                         <label class="form-label" for="pc_property_display">رقم العقار</label>
                         <div class="postal-property-row">
@@ -439,6 +430,11 @@ $csrf = \App\Csrf::getToken();
         'barqa'        => \App\Models\LibyaAdmin::wilayahSelectLabel('barqa'),
         'tripolitania' => \App\Models\LibyaAdmin::wilayahSelectLabel('tripolitania'),
         'fezzan'       => \App\Models\LibyaAdmin::wilayahSelectLabel('fezzan'),
+    ],
+    'wilayahToStateId' => [
+        'barqa'        => 2,
+        'tripolitania' => 1,
+        'fezzan'       => 3,
     ],
 ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <?php require dirname(__DIR__) . '/partials/foot.php';

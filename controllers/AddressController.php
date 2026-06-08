@@ -14,6 +14,7 @@ use App\Models\AddressSearch;
 use App\Models\ShabiyaCity;
 use App\Models\LibyaAdmin;
 use App\SessionAuth;
+use PDO;
 use RuntimeException;
 
 final class AddressController extends BaseController
@@ -249,6 +250,218 @@ final class AddressController extends BaseController
             'places'       => $places,
             'names'        => $names,
         ], JSON_UNESCAPED_UNICODE);
+    }
+
+    /**
+     * GET: أحياء وشوارع مدينة محددة داخل شعبية (من جداول محرر الحدود).
+     * ?city=اسم&region_id=2  أو  ?city=اسم&pc_area=2
+     */
+    public function apiCityBlocks(): void
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!SessionAuth::isLoggedIn()) {
+            http_response_code(401);
+            echo json_encode(['ok' => false, 'message' => 'غير مصرّح.'], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+        if (!in_array(SessionAuth::userRole(), ['admin', 'employee'], true)) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'message' => 'ليست لديك صلاحية.'], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+
+        $cityName = isset($_GET['city']) ? trim((string) $_GET['city']) : '';
+        $regionId = (int) ($_GET['region_id'] ?? $_GET['pc_area'] ?? 0);
+        if ($cityName === '' || $regionId < 1) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'message' => 'مرِّر اسم المدينة ورقم الشعبية (region_id أو pc_area).'], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+
+        try {
+            $pdo = Database::getInstance()->getPdo();
+            $cityId = $this->resolveCityIdInRegion($pdo, $regionId, $cityName);
+            if ($cityId === null) {
+                echo json_encode([
+                    'ok'       => true,
+                    'city_id'  => null,
+                    'pc_city'  => 1,
+                    'options'  => [],
+                    'message'  => 'لم تُعثر على المدينة في محرر الحدود. أنشئها ضمن الشعبية أولاً.',
+                ], JSON_UNESCAPED_UNICODE);
+
+                return;
+            }
+
+            $pcCity = $this->cityOrdinalInRegion($pdo, $regionId, $cityId);
+            $options = $this->fetchCityBlockOptions($pdo, $cityId, $pcCity);
+
+            echo json_encode([
+                'ok'      => true,
+                'city_id' => $cityId,
+                'pc_city' => $pcCity,
+                'options' => $options,
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (\Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'message' => 'تعذّر تحميل الأحياء والشوارع.'], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    private function resolveCityIdInRegion(PDO $pdo, int $regionId, string $cityName): ?int
+    {
+        $st = $pdo->prepare('SELECT id FROM cities WHERE region_id = :rid AND name = :nm LIMIT 1');
+        $st->execute(['rid' => $regionId, 'nm' => $cityName]);
+        $id = $st->fetchColumn();
+        if ($id !== false) {
+            return (int) $id;
+        }
+
+        $stAll = $pdo->prepare('SELECT id, name FROM cities WHERE region_id = :rid ORDER BY id ASC');
+        $stAll->execute(['rid' => $regionId]);
+        $needle = mb_strtolower($cityName);
+        $bestId = null;
+        $bestScore = 0;
+        foreach ($stAll->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $nm = mb_strtolower(trim((string) ($row['name'] ?? '')));
+            if ($nm === '') {
+                continue;
+            }
+            if ($nm === $needle) {
+                return (int) $row['id'];
+            }
+            if (str_contains($nm, $needle) || str_contains($needle, $nm)) {
+                $score = min(mb_strlen($nm), mb_strlen($needle));
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $bestId = (int) $row['id'];
+                }
+            }
+        }
+
+        return $bestId;
+    }
+
+    private function cityOrdinalInRegion(PDO $pdo, int $regionId, int $cityId): int
+    {
+        $st = $pdo->prepare(
+            'SELECT COUNT(*) FROM cities WHERE region_id = :rid AND id <= :cid'
+        );
+        $st->execute(['rid' => $regionId, 'cid' => $cityId]);
+        $n = (int) ($st->fetchColumn() ?: 0);
+
+        return max(1, $n);
+    }
+
+    /**
+     * @return list<array{type:string,id:int,name:string,label:string,sector:string,pc_city:int,area_id?:int,has_boundary:bool}>
+     */
+    private function fetchCityBlockOptions(PDO $pdo, int $cityId, int $pcCity): array
+    {
+        $stAreas = $pdo->prepare(
+            'SELECT a.id, a.name, a.code, a.kind
+             FROM areas a
+             WHERE a.city_id = :cid
+             ORDER BY a.id ASC'
+        );
+        $stAreas->execute(['cid' => $cityId]);
+        $areaRows = $stAreas->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $nonDefault = [];
+        foreach ($areaRows as $row) {
+            if (($row['kind'] ?? '') !== 'default') {
+                $nonDefault[] = $row;
+            }
+        }
+        $displayAreas = $nonDefault !== [] ? $nonDefault : $areaRows;
+
+        $options = [];
+        $areaIndex = 0;
+        foreach ($displayAreas as $row) {
+            $areaIndex++;
+            $aid = (int) ($row['id'] ?? 0);
+            if ($aid < 1) {
+                continue;
+            }
+            $options[] = [
+                'type'          => 'area',
+                'id'            => $aid,
+                'name'          => (string) ($row['name'] ?? ''),
+                'label'         => (string) ($row['name'] ?? ''),
+                'sector'        => $this->sectorFromEntityCode($row['code'] ?? null, $areaIndex),
+                'pc_city'       => $pcCity,
+                'has_boundary'  => $this->entityHasBoundary($pdo, 'area', $aid),
+            ];
+        }
+
+        $stStreets = $pdo->prepare(
+            'SELECT s.id, s.name, s.code, s.area_id, a.name AS area_name, a.code AS area_code
+             FROM streets s
+             JOIN areas a ON a.id = s.area_id
+             WHERE a.city_id = :cid
+             ORDER BY a.id ASC, s.id ASC'
+        );
+        $stStreets->execute(['cid' => $cityId]);
+        $streetIndex = 0;
+        foreach ($stStreets->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $streetIndex++;
+            $sid = (int) ($row['id'] ?? 0);
+            if ($sid < 1) {
+                continue;
+            }
+            $areaName = trim((string) ($row['area_name'] ?? ''));
+            $streetName = trim((string) ($row['name'] ?? ''));
+            $label = $areaName !== '' && $streetName !== ''
+                ? $areaName . ' — ' . $streetName
+                : ($streetName !== '' ? $streetName : $areaName);
+            $options[] = [
+                'type'          => 'street',
+                'id'            => $sid,
+                'area_id'       => (int) ($row['area_id'] ?? 0),
+                'name'          => $streetName,
+                'label'         => $label,
+                'sector'        => $this->sectorFromEntityCode(
+                    $row['code'] ?? $row['area_code'] ?? null,
+                    $streetIndex + $areaIndex
+                ),
+                'pc_city'       => $pcCity,
+                'has_boundary'  => $this->entityHasBoundary($pdo, 'street', $sid),
+            ];
+        }
+
+        return $options;
+    }
+
+    private function entityHasBoundary(PDO $pdo, string $level, int $entityId): bool
+    {
+        $st = $pdo->prepare(
+            'SELECT 1 FROM boundaries WHERE level = :lvl AND entity_id = :eid LIMIT 1'
+        );
+        $st->execute(['lvl' => $level, 'eid' => $entityId]);
+
+        return (bool) $st->fetchColumn();
+    }
+
+    private function sectorFromEntityCode(mixed $code, int $fallbackIndex): string
+    {
+        $c = strtoupper(trim((string) $code));
+        if ($c !== '' && preg_match('/^[A-Z0-9]{1,2}$/', $c)) {
+            return $c;
+        }
+        if ($c !== '') {
+            return strtoupper(substr($c, 0, 2));
+        }
+        if ($fallbackIndex >= 1 && $fallbackIndex <= 9) {
+            return (string) $fallbackIndex;
+        }
+        if ($fallbackIndex >= 10 && $fallbackIndex <= 35) {
+            return chr(ord('A') + $fallbackIndex - 10);
+        }
+
+        return 'S';
     }
 
     /** @param array<string, mixed> $data */

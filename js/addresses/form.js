@@ -98,6 +98,7 @@
   var contextBarLiveFromMap = !!cfg.isEdit;
   var contextBarWilayahPinned = false;
   var wilayahChangeSuppress = 0;
+  var currentCityDbId = 0;
 
   function beginWilayahProgrammatic() { wilayahChangeSuppress++; }
   function endWilayahProgrammatic() { wilayahChangeSuppress = Math.max(0, wilayahChangeSuppress - 1); }
@@ -122,10 +123,222 @@
     }
   }
 
+  var blocksFetchGen = 0;
+
+  function resetNeighborhoodSelect() {
+    if (!neighborhoodIn) { return; }
+    neighborhoodIn.innerHTML = '';
+    var o0 = document.createElement('option');
+    o0.value = '';
+    o0.textContent = '— اختر الحي أو الشارع —';
+    neighborhoodIn.appendChild(o0);
+    if (sectorIn) { sectorIn.value = 'S'; }
+    var stNum = document.getElementById('street_number');
+    if (stNum) { stNum.value = ''; }
+  }
+
   function resetCityAreaBranchAndDatalist() {
     if (cityAreaIn) { cityAreaIn.value = ''; }
-    if (neighborhoodIn) { neighborhoodIn.value = ''; }
+    resetNeighborhoodSelect();
     rebuildCityAreaDatalist([]);
+  }
+
+  function getNeighborhoodLabel() {
+    if (!neighborhoodIn) { return ''; }
+    if (neighborhoodIn.tagName === 'SELECT') {
+      var opt = neighborhoodIn.options[neighborhoodIn.selectedIndex];
+      return opt && opt.value ? String(opt.textContent || '').trim() : '';
+    }
+    return String(neighborhoodIn.value || '').trim();
+  }
+
+  function parseBlockOptionValue(val) {
+    var m = String(val || '').match(/^(area|street):(\d+)$/);
+    if (!m) { return null; }
+    return { level: m[1], id: parseInt(m[2], 10) };
+  }
+
+  function flyToSelectedBlock() {
+    if (cfg.isEdit || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
+    var opt = neighborhoodIn.options[neighborhoodIn.selectedIndex];
+    if (!opt || !opt.value) { return; }
+    var parsed = parseBlockOptionValue(opt.value);
+    if (!parsed || !window.AddrMap || typeof window.AddrMap.flyToEntityLocation !== 'function') {
+      return;
+    }
+    window.AddrMap.flyToEntityLocation(parsed.level, parsed.id);
+  }
+
+  function showCityGridOnly() {
+    if (cfg.isEdit || !window.AddrMap || typeof window.AddrMap.showCityBoundaryOnly !== 'function') {
+      return;
+    }
+    var regionId = areaIn ? parseInt(areaIn.value, 10) : 0;
+    if (currentCityDbId > 0 && regionId > 0) {
+      window.AddrMap.showCityBoundaryOnly(currentCityDbId, regionId);
+    }
+  }
+
+  function showSelectedBlockGrid() {
+    if (cfg.isEdit || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') {
+      return;
+    }
+    var opt = neighborhoodIn.options[neighborhoodIn.selectedIndex];
+    if (!opt || !opt.value) {
+      showCityGridOnly();
+      return;
+    }
+    if (!window.AddrMap || typeof window.AddrMap.showBlockBoundaryOnly !== 'function') {
+      return;
+    }
+    var parsed = parseBlockOptionValue(opt.value);
+    if (!parsed) {
+      showCityGridOnly();
+      return;
+    }
+    var parentId = 0;
+    if (parsed.level === 'area') {
+      parentId = currentCityDbId;
+    } else if (parsed.level === 'street') {
+      parentId = parseInt(opt.getAttribute('data-area-id') || '0', 10);
+    }
+    if (parentId > 0) {
+      window.AddrMap.showBlockBoundaryOnly(parsed.level, parsed.id, parentId);
+    } else {
+      showCityGridOnly();
+    }
+  }
+
+  function syncSelectedBlockFromSelect() {
+    if (!neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
+    var opt = neighborhoodIn.options[neighborhoodIn.selectedIndex];
+    if (!opt || !opt.value) {
+      if (sectorIn) { sectorIn.value = 'S'; }
+      var stClear = document.getElementById('street_number');
+      if (stClear) { stClear.value = ''; }
+      updatePreview();
+      updateContextBar();
+      return;
+    }
+    var sector = opt.getAttribute('data-sector') || 'S';
+    if (sectorIn) { sectorIn.value = String(sector).toUpperCase().slice(0, 2); }
+    var pcCityAttr = opt.getAttribute('data-pc-city');
+    if (cityIn && pcCityAttr) { cityIn.value = String(pcCityAttr); }
+    var stNum = document.getElementById('street_number');
+    if (stNum) {
+      stNum.value = opt.getAttribute('data-type') === 'street'
+        ? String(opt.getAttribute('data-name') || '').trim()
+        : '';
+    }
+    updatePreview();
+    updateContextBar();
+  }
+
+  function populateNeighborhoodOptions(rows, matchLabel) {
+    if (!neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
+    resetNeighborhoodSelect();
+    var list = Array.isArray(rows) ? rows : [];
+    var areaGrp = document.createElement('optgroup');
+    areaGrp.label = 'أحياء';
+    var streetGrp = document.createElement('optgroup');
+    streetGrp.label = 'شوارع';
+    var hasArea = false;
+    var hasStreet = false;
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i];
+      if (!row || !row.id) { continue; }
+      var o = document.createElement('option');
+      o.value = String(row.type || 'area') + ':' + String(row.id);
+      o.textContent = String(row.label || row.name || '—');
+      o.setAttribute('data-sector', String(row.sector || 'S'));
+      o.setAttribute('data-pc-city', String(row.pc_city != null ? row.pc_city : '1'));
+      o.setAttribute('data-type', String(row.type || 'area'));
+      o.setAttribute('data-name', String(row.name || ''));
+      if (row.area_id != null) {
+        o.setAttribute('data-area-id', String(row.area_id));
+      }
+      if (row.type === 'street') {
+        streetGrp.appendChild(o);
+        hasStreet = true;
+      } else {
+        areaGrp.appendChild(o);
+        hasArea = true;
+      }
+    }
+    if (hasArea) { neighborhoodIn.appendChild(areaGrp); }
+    if (hasStreet) { neighborhoodIn.appendChild(streetGrp); }
+    if (!hasArea && !hasStreet) { return; }
+    var want = matchLabel ? String(matchLabel).trim() : '';
+    if (want) {
+      for (var j = 0; j < neighborhoodIn.options.length; j++) {
+        var o2 = neighborhoodIn.options[j];
+        if (!o2.value) { continue; }
+        if (o2.textContent === want || o2.getAttribute('data-name') === want) {
+          neighborhoodIn.selectedIndex = j;
+          break;
+        }
+      }
+    }
+    syncSelectedBlockFromSelect();
+    if (neighborhoodIn.value) {
+      showSelectedBlockGrid();
+      flyToSelectedBlock();
+    } else {
+      showCityGridOnly();
+    }
+  }
+
+  function loadCityBlocksForCurrentCity(matchLabel) {
+    var cityName = cityAreaIn ? String(cityAreaIn.value || '').trim() : '';
+    var regionId = areaIn ? parseInt(areaIn.value, 10) : 0;
+    if (!cityName || !regionId || regionId < 1) {
+      resetNeighborhoodSelect();
+      return Promise.resolve(null);
+    }
+    var gen = ++blocksFetchGen;
+    resetNeighborhoodSelect();
+    var url =
+      'index.php?r=address_city_blocks&city=' +
+      encodeURIComponent(cityName) +
+      '&region_id=' +
+      encodeURIComponent(String(regionId));
+    return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) {
+        if (!r.ok) { throw new Error('blocks http ' + r.status); }
+        return r.json();
+      })
+      .then(function (data) {
+        if (gen !== blocksFetchGen) { return null; }
+        if (!data || !data.ok) { return null; }
+        currentCityDbId = data.city_id != null ? parseInt(data.city_id, 10) || 0 : 0;
+        if (cityIn && data.pc_city != null) { cityIn.value = String(data.pc_city); }
+        if (data.options && data.options.length) {
+          populateNeighborhoodOptions(data.options, matchLabel);
+        } else {
+          showCityGridOnly();
+          if (data.message) {
+            showMsg(data.message, false);
+          }
+        }
+        return data;
+      })
+      .catch(function () {
+        if (gen === blocksFetchGen) {
+          showMsg('تعذّر تحميل الأحياء والشوارع.', true);
+        }
+        return null;
+      });
+  }
+
+  function resetMapForHierarchyChange(level) {
+    if (cfg.isEdit || !window.AddrMap) {
+      return;
+    }
+    if (typeof window.AddrMap.prepareHierarchyChange === 'function') {
+      window.AddrMap.prepareHierarchyChange(level);
+    } else if (typeof window.AddrMap.clearMapSelection === 'function') {
+      window.AddrMap.clearMapSelection();
+    }
   }
 
   function applyWilayahSelectLabelsFromConfig() {
@@ -142,7 +355,7 @@
 
   function buildLocality() {
     var c = cityAreaIn ? String(cityAreaIn.value || '').trim() : '';
-    var h = neighborhoodIn ? String(neighborhoodIn.value || '').trim() : '';
+    var h = getNeighborhoodLabel();
     if (c && h) { return c + ' | ' + h; }
     return c || h || '';
   }
@@ -156,7 +369,7 @@
   function syncProvinceFromWilayah() {
     if (!provinceIn || !wilayahSel) { return; }
     var wk = wilayahSel.value;
-    provinceIn.value = WKEY_TO_PROV[wk] || 'T';
+    provinceIn.value = wk ? (WKEY_TO_PROV[wk] || '') : '';
   }
 
   function syncAreaFromShabiya() {
@@ -198,7 +411,7 @@
       ctxArea.textContent = formatShabiyaCtxChip(codeLbl, sh);
     }
     var cityLbl = cityAreaIn ? String(cityAreaIn.value || '').trim() : '';
-    var hoodLbl = neighborhoodIn ? String(neighborhoodIn.value || '').trim() : '';
+    var hoodLbl = getNeighborhoodLabel();
     if (ctxPlace) {
       if (cityLbl && hoodLbl) {
         ctxPlace.textContent = cityLbl + ' — ' + hoodLbl;
@@ -232,6 +445,17 @@
     var w = wilayahSel.value;
     var prev = preserve ? shabiyaSel.value : '';
     shabiyaSel.innerHTML = '';
+    if (!w) {
+      var ozEmpty = document.createElement('option');
+      ozEmpty.value = '';
+      ozEmpty.textContent = '—';
+      shabiyaSel.appendChild(ozEmpty);
+      shabiyaSel.value = '';
+      var paEmpty = document.getElementById('pc_area');
+      if (paEmpty) { paEmpty.value = ''; }
+      syncAreaFromShabiya();
+      return;
+    }
     if (!preserve) {
       var oz = document.createElement('option');
       oz.value = '';
@@ -274,7 +498,7 @@
     if (!preserve) {
       shabiyaSel.value = '';
       var paClear = document.getElementById('pc_area');
-      if (paClear) { paClear.value = '1'; }
+      if (paClear) { paClear.value = ''; }
     } else if (!shabiyaSel.value) {
       shabiyaSel.selectedIndex = 0;
     }
@@ -303,12 +527,13 @@
       }
       if (!cfg.isEdit) {
         contextBarWilayahPinned = true;
-        if (window.AddrMap) {
-          if (typeof window.AddrMap.clearMapSelection === 'function') {
-            window.AddrMap.clearMapSelection();
-          }
-          if (typeof window.AddrMap.flyToWilayahKey === 'function') {
-            window.AddrMap.flyToWilayahKey(wilayahSel.value);
+        resetMapForHierarchyChange('wilayah');
+        var wkCh = wilayahSel.value ? String(wilayahSel.value).trim() : '';
+        if (wkCh && window.AddrMap && typeof window.AddrMap.showWilayahRegionGrids === 'function') {
+          window.AddrMap.showWilayahRegionGrids(wkCh);
+        } else if (window.AddrMap) {
+          if (typeof window.AddrMap.fitLibya === 'function') {
+            window.AddrMap.fitLibya();
           }
         }
       }
@@ -318,8 +543,12 @@
       updatePreview();
       updateContextBar();
     });
-    syncProvinceFromWilayah();
-    refillShabiyat();
+    if (wilayahSel.value) {
+      syncProvinceFromWilayah();
+      refillShabiyat();
+    } else {
+      refillShabiyat(false);
+    }
     updateContextBar();
   }
 
@@ -348,8 +577,10 @@
       resetCityAreaBranchAndDatalist();
       var pv = shabiyaSel.value ? String(shabiyaSel.value).trim() : '';
       if (!cfg.isEdit && !pv) {
-        if (window.AddrMap && typeof window.AddrMap.clearMapSelection === 'function') {
-          window.AddrMap.clearMapSelection();
+        resetMapForHierarchyChange('shabiya');
+        var wkBack = wilayahSel && wilayahSel.value ? String(wilayahSel.value).trim() : '';
+        if (wkBack && window.AddrMap && typeof window.AddrMap.showWilayahRegionGrids === 'function') {
+          window.AddrMap.showWilayahRegionGrids(wkBack);
         }
         syncAreaFromShabiya();
         updatePreview();
@@ -357,6 +588,7 @@
         return;
       }
       if (!cfg.isEdit && pv) {
+        resetMapForHierarchyChange('shabiya');
         var provLetter = provinceIn ? String(provinceIn.value || '').trim() : '';
         if (!provLetter && wilayahSel) {
           provLetter = WKEY_TO_PROV[wilayahSel.value] || 'T';
@@ -373,7 +605,9 @@
         } catch (eFill) {}
         try {
           window.dispatchEvent(
-            new CustomEvent('addr-shabiya-from-form', { detail: { name: pv, province: provLetter } })
+            new CustomEvent('addr-shabiya-from-form', {
+              detail: { name: pv, province: provLetter, code: codeStr }
+            })
           );
         } catch (eFormSb) {}
       } else {
@@ -384,19 +618,27 @@
     });
   }
 
-  [cityAreaIn, neighborhoodIn].forEach(function (elI) {
-    if (elI) {
-      elI.addEventListener('input', updateContextBar);
-    }
-  });
   if (cityAreaIn) {
+    cityAreaIn.addEventListener('input', updateContextBar);
     cityAreaIn.addEventListener('change', function () {
       var cn = String(cityAreaIn.value || '').trim();
-      if (!cfg.isEdit && cn && window.AddrMap && typeof window.AddrMap.flyToLoadedCityPlace === 'function') {
-        window.AddrMap.flyToLoadedCityPlace(cn);
+      if (!cfg.isEdit) {
+        resetMapForHierarchyChange('city');
+        if (cn && window.AddrMap && typeof window.AddrMap.flyToLoadedCityPlace === 'function') {
+          window.AddrMap.flyToLoadedCityPlace(cn);
+        }
+        loadCityBlocksForCurrentCity();
       }
       updateContextBar();
       try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eC) {}
+    });
+  }
+  if (neighborhoodIn) {
+    neighborhoodIn.addEventListener('change', function () {
+      syncSelectedBlockFromSelect();
+      showSelectedBlockGrid();
+      flyToSelectedBlock();
+      try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eN) {}
     });
   }
   updatePreview();
@@ -450,13 +692,18 @@
     if (cityIn && r.pc_city != null) { cityIn.value = String(r.pc_city); }
     if (sectorIn && r.pc_sector) { sectorIn.value = String(r.pc_sector).toUpperCase().slice(0, 2); }
     var loc = r.locality ? String(r.locality) : '';
+    var hoodPart = '';
     if (loc.indexOf(' | ') >= 0) {
       var parts = loc.split(' | ');
       if (cityAreaIn) { cityAreaIn.value = (parts[0] || '').trim(); }
-      if (neighborhoodIn) { neighborhoodIn.value = (parts[1] || '').trim(); }
+      hoodPart = (parts[1] || '').trim();
     } else {
       if (cityAreaIn) { cityAreaIn.value = loc; }
-      if (neighborhoodIn) { neighborhoodIn.value = ''; }
+    }
+    if (cityAreaIn && cityAreaIn.value) {
+      loadCityBlocksForCurrentCity(hoodPart);
+    } else {
+      resetNeighborhoodSelect();
     }
     var hn = document.getElementById('holder_name');
     if (hn && r.owner_name != null) { hn.value = String(r.owner_name); }
@@ -475,9 +722,15 @@
     updateContextBar();
     if (!opts.skipShabiyaMapReload && !cfg.isEdit && shabiyaSel && shabiyaSel.value && provinceIn) {
       try {
+        var rowSbSv = findShabiyaRowForCurrentWilayah(String(shabiyaSel.value).trim());
+        var codeSbSv = rowSbSv ? String(rowSbSv.code || '').trim() : '';
         window.dispatchEvent(
           new CustomEvent('addr-shabiya-from-form', {
-            detail: { name: String(shabiyaSel.value).trim(), province: String(provinceIn.value || '').trim() }
+            detail: {
+              name: String(shabiyaSel.value).trim(),
+              province: String(provinceIn.value || '').trim(),
+              code: codeSbSv
+            }
           })
         );
       } catch (eSbSv) {}
@@ -528,16 +781,19 @@
     clearContextBarValues();
     if (wilayahSel) {
       beginWilayahProgrammatic();
-      try { wilayahSel.value = 'tripolitania'; } finally { endWilayahProgrammatic(); }
+      try { wilayahSel.value = ''; } finally { endWilayahProgrammatic(); }
     }
     syncProvinceFromWilayah();
-    refillShabiyat();
+    refillShabiyat(false);
+    if (window.AddrMap && typeof window.AddrMap.fitLibya === 'function') {
+      window.AddrMap.fitLibya();
+    }
     if (sectorIn) { sectorIn.value = 'S'; }
     if (cityIn) { cityIn.value = '1'; }
     var hn = document.getElementById('holder_name');
     if (hn) { hn.value = ''; }
     if (cityAreaIn) { cityAreaIn.value = ''; }
-    if (neighborhoodIn) { neighborhoodIn.value = ''; }
+    resetNeighborhoodSelect();
     var typ = document.getElementById('type');
     if (typ) { typ.value = 'residential'; }
     var hint = document.getElementById('map-parcel-desc');
@@ -559,7 +815,7 @@
     var st = document.getElementById('street_number');
     if (st) { st.value = ''; }
     if (cityAreaIn) { cityAreaIn.value = ''; }
-    if (neighborhoodIn) { neighborhoodIn.value = ''; }
+    resetNeighborhoodSelect();
     var typ = document.getElementById('type');
     if (typ) { typ.value = 'residential'; }
     var hint = document.getElementById('map-parcel-desc');
@@ -611,7 +867,8 @@
 
     if (level === 'city') {
       if (cityAreaIn && d.place) { cityAreaIn.value = String(d.place).trim(); }
-      if (neighborhoodIn) { neighborhoodIn.value = ''; }
+      resetNeighborhoodSelect();
+      loadCityBlocksForCurrentCity();
       updatePreview();
       updateContextBar();
       try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eMr) {}
@@ -659,9 +916,10 @@
     if (sectorIn && d.sector) { sectorIn.value = String(d.sector).toUpperCase().slice(0, 2); }
     if (level === 'shabiya') {
       if (cityAreaIn) { cityAreaIn.value = ''; }
-      if (neighborhoodIn) { neighborhoodIn.value = ''; }
+      resetNeighborhoodSelect();
     } else if (cityAreaIn && d.place) {
       cityAreaIn.value = String(d.place).trim();
+      loadCityBlocksForCurrentCity();
     }
     updatePreview();
     updateContextBar();
@@ -683,7 +941,8 @@
     }
     var d = ev.detail;
     if (cityAreaIn && d.name) { cityAreaIn.value = String(d.name).trim(); }
-    if (neighborhoodIn) { neighborhoodIn.value = ''; }
+    resetNeighborhoodSelect();
+    loadCityBlocksForCurrentCity();
     updatePreview();
     updateContextBar();
     try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eP) {}
@@ -696,8 +955,29 @@
 
   window.addEventListener('addr-neighborhood-fill', function (ev) {
     if (!ev || !ev.detail || !neighborhoodIn) { return; }
-    var n = ev.detail.neighborhood;
-    if (n) { neighborhoodIn.value = String(n).trim(); }
+    var n = ev.detail.neighborhood ? String(ev.detail.neighborhood).trim() : '';
+    if (!n) { return; }
+    if (neighborhoodIn.tagName === 'SELECT') {
+      var matched = false;
+      for (var ni = 0; ni < neighborhoodIn.options.length; ni++) {
+        var oN = neighborhoodIn.options[ni];
+        if (!oN.value) { continue; }
+        if (oN.textContent === n || oN.getAttribute('data-name') === n) {
+          neighborhoodIn.selectedIndex = ni;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched && cityAreaIn && cityAreaIn.value) {
+        loadCityBlocksForCurrentCity(n);
+        return;
+      }
+      syncSelectedBlockFromSelect();
+      showSelectedBlockGrid();
+      flyToSelectedBlock();
+    } else {
+      neighborhoodIn.value = n;
+    }
     updateContextBar();
   });
 
