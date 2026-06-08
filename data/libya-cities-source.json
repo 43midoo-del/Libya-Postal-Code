@@ -1,0 +1,110 @@
+{
+  "_note": "Curated list of well-known Libyan cities/towns/villages. Coordinates are WGS84 (lat, lng). The build script (scripts/build_cities_geojson.php) performs a point-in-polygon test against data/libya-shabiyat.geojson to assign each row to its shabiyaCode; the `shabiya_hint` column is used only as a fallback when a point falls just outside any polygon (coastal cities, etc.).",
+  "_source": "Hand-curated from common geography knowledge + project config/postal_map_regions.php Arabic conventions. ~90 places spanning every shabiyya.",
+  "cities": [
+    { "name_ar": "طبرق", "name_en": "Tobruk", "lat": 32.0833, "lng": 23.95, "kind": "city", "population": 120000, "shabiya_hint": "B1" },
+    { "name_ar": "البردي", "name_en": "Bardiya", "lat": 31.7565, "lng": 25.0866, "kind": "town", "shabiya_hint": "B1" },
+    { "name_ar": "الجغبوب", "name_en": "Jaghbub", "lat": 29.7475, "lng": 24.5172, "kind": "village", "shabiya_hint": "B1" },
+    { "name_ar": "العدم", "name_en": "Al Adam", "lat": 31.66, "lng": 23.86, "kind": "village", "shabiya_hint": "B1" },
+
+    { "name_ar": "درنة", "name_en": "Derna", "lat": 32.7651, "lng": 22.6391, "kind": "city", "population": 90000, "shabiya_hint": "B2" },
+    { "name_ar": "القبة", "name_en": "Al Qubbah", "lat": 32.7567, "lng": 22.2333, "kind": "town", "shabiya_hint": "B2" },
+    { "name_ar": "مرتوبة", "name_en": "Martuba", "lat": 32.55, "lng": 22.65, "kind": "village", "shabiya_hint": "B2" },
+
+    { "name_ar": "البيضاء", "name_en": "Bayda", "lat": 32.7627, "lng": 21.7551, "kind": "city", "population": 160000, "shabiya_hint": "B3" },
+    { "name_ar": "شحات", "name_en": "Shahhat", "lat": 32.8222, "lng": 21.8584, "kind": "town", "shabiya_hint": "B3" },
+    { "name_ar": "سوسة", "name_en": "Susah", "lat": 32.8965, "lng": 21.9786, "kind": "town", "shabiya_hint": "B3" },
+    { "name_ar": "مساه", "name_en": "Massa", "lat": 32.55, "lng": 21.45, "kind": "village", "shabiya_hint": "B3" },
+
+    { "name_ar": "المرج", "name_en": "Al Marj", "lat": 32.4925, "lng": 20.827, "kind": "city", "population": 85000, "shabiya_hint": "B4" },
+    { "name_ar": "توكرة", "name_en": "Tukrah", "lat": 32.5333, "lng": 20.5833, "kind": "town", "shabiya_hint": "B4" },
+    { "name_ar": "طلميثة", "name_en": "Tolmeitha", "lat": 32.7, "lng": 20.9667, "kind": "village", "shabiya_hint": "B4" },
+
+    { "name_ar": "بنغازي", "name_en": "Benghazi", "lat": 32.1167, "lng": 20.0667, "kind": "city", "population": 700000, "shabiya_hint": "B5" },
+    { "name_ar": "سلوق", "name_en": "Sluq", "lat": 31.6667, "lng": 20.25, "kind": "town", "shabiya_hint": "B5" },
+    { "name_ar": "قمينس", "name_en": "Qaminis", "lat": 31.65, "lng": 20.0167, "kind": "town", "shabiya_hint": "B5" },
+    { "name_ar": "الأبيار", "name_en": "Al Abyar", "lat": 32.1817, "lng": 20.5806, "kind": "town", "shabiya_hint": "B5" },
+
+    { "name_ar": "اجدابيا", "name_en": "Ajdabiya", "lat": 30.7556, "lng": 20.2256, "kind": "city", "population": 100000, "shabiya_hint": "B6" },
+    { "name_ar": "البريقة", "name_en": "Brega", "lat": 30.4131, "lng": 19.5731, "kind": "town", "shabiya_hint": "B6" },
+    { "name_ar": "جالو", "name_en": "Jalu", "lat": 29.0333, "lng": 21.55, "kind": "town", "shabiya_hint": "B6" },
+    { "name_ar": "أوجلة", "name_en": "Awjila", "lat": 29.1083, "lng": 21.2872, "kind": "town", "shabiya_hint": "B6" },
+    { "name_ar": "مرادة", "name_en": "Marada", "lat": 29.24, "lng": 19.205, "kind": "village", "shabiya_hint": "B6" },
+
+    { "name_ar": "الكفرة", "name_en": "Kufra", "lat": 24.1781, "lng": 23.3144, "kind": "town", "population": 40000, "shabiya_hint": "B7" },
+    { "name_ar": "تازربو", "name_en": "Tazirbu", "lat": 25.7167, "lng": 21.05, "kind": "village", "shabiya_hint": "B7" },
+    { "name_ar": "ربيانة", "name_en": "Rabyana", "lat": 24.1, "lng": 22.0, "kind": "village", "shabiya_hint": "B7" },
+
+    { "name_ar": "سرت", "name_en": "Sirte", "lat": 31.2089, "lng": 16.5887, "kind": "city", "population": 130000, "shabiya_hint": "T8" },
+    { "name_ar": "بن جواد", "name_en": "Bin Jawad", "lat": 30.8694, "lng": 18.0944, "kind": "town", "shabiya_hint": "T8" },
+    { "name_ar": "النوفلية", "name_en": "An Nawfaliya", "lat": 30.7667, "lng": 17.9167, "kind": "town", "shabiya_hint": "T8" },
+
+    { "name_ar": "أبو هادي", "name_en": "Bu Hadi", "lat": 30.92, "lng": 16.0, "kind": "village", "shabiya_hint": "T9" },
+    { "name_ar": "وادي باي", "name_en": "Wadi Bey", "lat": 30.55, "lng": 15.85, "kind": "village", "shabiya_hint": "T9" },
+    { "name_ar": "هراوة", "name_en": "Harawah", "lat": 30.85, "lng": 16.1, "kind": "village", "shabiya_hint": "T9" },
+
+    { "name_ar": "مصراتة", "name_en": "Misrata", "lat": 32.3754, "lng": 15.0925, "kind": "city", "population": 280000, "shabiya_hint": "T10" },
+    { "name_ar": "تاورغاء", "name_en": "Tawergha", "lat": 32.0167, "lng": 15.05, "kind": "town", "shabiya_hint": "T10" },
+    { "name_ar": "زليتن", "name_en": "Zliten", "lat": 32.4674, "lng": 14.5687, "kind": "city", "population": 240000, "shabiya_hint": "T10" },
+    { "name_ar": "كعام", "name_en": "Kaam", "lat": 32.51, "lng": 14.39, "kind": "village", "shabiya_hint": "T10" },
+
+    { "name_ar": "الخمس", "name_en": "Al Khoms", "lat": 32.6486, "lng": 14.2619, "kind": "city", "population": 200000, "shabiya_hint": "T11" },
+    { "name_ar": "ترهونة", "name_en": "Tarhuna", "lat": 32.435, "lng": 13.6332, "kind": "city", "population": 200000, "shabiya_hint": "T11" },
+    { "name_ar": "مسلاتة", "name_en": "Masallata", "lat": 32.6294, "lng": 14.0061, "kind": "town", "shabiya_hint": "T11" },
+    { "name_ar": "بني وليد", "name_en": "Bani Walid", "lat": 31.75, "lng": 13.9833, "kind": "city", "population": 95000, "shabiya_hint": "T11" },
+
+    { "name_ar": "طرابلس", "name_en": "Tripoli", "lat": 32.8872, "lng": 13.1913, "kind": "city", "population": 1126000, "shabiya_hint": "T12" },
+    { "name_ar": "تاجوراء", "name_en": "Tajura", "lat": 32.88, "lng": 13.35, "kind": "town", "shabiya_hint": "T12" },
+    { "name_ar": "جنزور", "name_en": "Janzur", "lat": 32.8133, "lng": 13.0167, "kind": "town", "shabiya_hint": "T12" },
+    { "name_ar": "أبو سليم", "name_en": "Abu Salim", "lat": 32.85, "lng": 13.18, "kind": "town", "shabiya_hint": "T12" },
+
+    { "name_ar": "العزيزية", "name_en": "Al Aziziyah", "lat": 32.5333, "lng": 13.0167, "kind": "city", "shabiya_hint": "T13" },
+    { "name_ar": "قصر بن غشير", "name_en": "Qasr Bin Ghashir", "lat": 32.6411, "lng": 13.2342, "kind": "town", "shabiya_hint": "T13" },
+    { "name_ar": "السواني", "name_en": "Suani Bin Adam", "lat": 32.45, "lng": 13.05, "kind": "town", "shabiya_hint": "T13" },
+    { "name_ar": "بئر الغنم", "name_en": "Bir al Ghanam", "lat": 32.45, "lng": 12.74, "kind": "village", "shabiya_hint": "T13" },
+
+    { "name_ar": "الزاوية", "name_en": "Az Zawiya", "lat": 32.7522, "lng": 12.7278, "kind": "city", "population": 290000, "shabiya_hint": "T14" },
+    { "name_ar": "صبراتة", "name_en": "Sabratha", "lat": 32.7933, "lng": 12.4886, "kind": "city", "population": 100000, "shabiya_hint": "T14" },
+    { "name_ar": "زوارة", "name_en": "Zuwarah", "lat": 32.9311, "lng": 12.082, "kind": "city", "population": 45000, "shabiya_hint": "T14" },
+    { "name_ar": "العجيلات", "name_en": "Al Ajaylat", "lat": 32.76, "lng": 12.3833, "kind": "town", "shabiya_hint": "T14" },
+    { "name_ar": "صرمان", "name_en": "Sirman", "lat": 32.7253, "lng": 12.5689, "kind": "town", "shabiya_hint": "T14" },
+
+    { "name_ar": "غريان", "name_en": "Gharyan", "lat": 32.1722, "lng": 13.0203, "kind": "city", "population": 170000, "shabiya_hint": "T15" },
+    { "name_ar": "يفرن", "name_en": "Yafran", "lat": 32.0631, "lng": 12.5286, "kind": "town", "shabiya_hint": "T15" },
+    { "name_ar": "جادو", "name_en": "Jadu", "lat": 31.9542, "lng": 12.0247, "kind": "town", "shabiya_hint": "T15" },
+    { "name_ar": "مزدة", "name_en": "Mizdah", "lat": 31.4488, "lng": 12.9817, "kind": "town", "shabiya_hint": "T15" },
+    { "name_ar": "كاباو", "name_en": "Kabaw", "lat": 31.8333, "lng": 12.0333, "kind": "village", "shabiya_hint": "T15" },
+
+    { "name_ar": "نالوت", "name_en": "Nalut", "lat": 31.8746, "lng": 10.9802, "kind": "city", "population": 25000, "shabiya_hint": "T16" },
+    { "name_ar": "غدامس", "name_en": "Ghadames", "lat": 30.1333, "lng": 9.5, "kind": "city", "shabiya_hint": "T16" },
+    { "name_ar": "سيناون", "name_en": "Sinawan", "lat": 31.0167, "lng": 10.6, "kind": "village", "shabiya_hint": "T16" },
+    { "name_ar": "تيجي", "name_en": "Tiji", "lat": 32.0167, "lng": 11.35, "kind": "town", "shabiya_hint": "T16" },
+
+    { "name_ar": "هون", "name_en": "Hun", "lat": 29.1273, "lng": 15.9438, "kind": "town", "shabiya_hint": "F17" },
+    { "name_ar": "ودان", "name_en": "Waddan", "lat": 29.1614, "lng": 16.1389, "kind": "town", "shabiya_hint": "F17" },
+    { "name_ar": "سوكنة", "name_en": "Sokna", "lat": 29.0699, "lng": 15.751, "kind": "town", "shabiya_hint": "F17" },
+    { "name_ar": "زلة", "name_en": "Zillah", "lat": 28.5547, "lng": 17.5878, "kind": "village", "shabiya_hint": "F17" },
+
+    { "name_ar": "براك", "name_en": "Brak", "lat": 27.55, "lng": 14.2731, "kind": "town", "shabiya_hint": "F18" },
+    { "name_ar": "إدري", "name_en": "Idri", "lat": 27.45, "lng": 13.05, "kind": "town", "shabiya_hint": "F18" },
+    { "name_ar": "تمسة", "name_en": "Tmessah", "lat": 26.3667, "lng": 15.7167, "kind": "village", "shabiya_hint": "F18" },
+
+    { "name_ar": "سبها", "name_en": "Sabha", "lat": 27.0377, "lng": 14.4283, "kind": "city", "population": 130000, "shabiya_hint": "F19" },
+    { "name_ar": "أوينات", "name_en": "Awinat", "lat": 26.66, "lng": 14.45, "kind": "village", "shabiya_hint": "F19" },
+    { "name_ar": "غدوة", "name_en": "Ghaddwah", "lat": 26.4308, "lng": 14.2956, "kind": "village", "shabiya_hint": "F19" },
+
+    { "name_ar": "أوباري", "name_en": "Ubari", "lat": 26.5919, "lng": 12.7822, "kind": "city", "shabiya_hint": "F20" },
+    { "name_ar": "العوينات", "name_en": "Al Awaynat", "lat": 25.7919, "lng": 10.5739, "kind": "town", "shabiya_hint": "F20" },
+    { "name_ar": "جرمة", "name_en": "Germa", "lat": 26.5314, "lng": 13.0808, "kind": "village", "shabiya_hint": "F20" },
+
+    { "name_ar": "غات", "name_en": "Ghat", "lat": 24.9667, "lng": 10.1833, "kind": "city", "shabiya_hint": "F21" },
+    { "name_ar": "البركت", "name_en": "Barkat", "lat": 24.9, "lng": 10.5, "kind": "village", "shabiya_hint": "F21" },
+    { "name_ar": "تاهالة", "name_en": "Tahala", "lat": 25.5, "lng": 10.5, "kind": "village", "shabiya_hint": "F21" },
+
+    { "name_ar": "مرزق", "name_en": "Murzuq", "lat": 25.9156, "lng": 13.9183, "kind": "city", "shabiya_hint": "F22" },
+    { "name_ar": "القطرون", "name_en": "Al Qatrun", "lat": 24.9492, "lng": 14.6469, "kind": "town", "shabiya_hint": "F22" },
+    { "name_ar": "زويلة", "name_en": "Zuwila", "lat": 26.1681, "lng": 15.1167, "kind": "village", "shabiya_hint": "F22" },
+    { "name_ar": "تراغن", "name_en": "Traghan", "lat": 26.0028, "lng": 14.4506, "kind": "village", "shabiya_hint": "F22" },
+    { "name_ar": "أم الأرانب", "name_en": "Umm al Aranib", "lat": 26.075, "lng": 14.8528, "kind": "village", "shabiya_hint": "F22" }
+  ]
+}

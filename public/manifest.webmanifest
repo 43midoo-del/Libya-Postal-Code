@@ -1,0 +1,20 @@
+{
+  "name": "نظام إدارة العناوين البريدية — ليبيا",
+  "short_name": "Libya Postal",
+  "description": "تطبيق إدارة العناوين البريدية الذكية لليبيا — يعمل أوفلاين.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "index.php?r=dashboard",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#0e7490",
+  "icons": [
+    {
+      "src": "public/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

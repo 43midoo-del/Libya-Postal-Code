@@ -1,0 +1,4 @@
+# Apache (XAMPP): use index.php as default for http://localhost/your-folder/
+<IfModule mod_dir.c>
+    DirectoryIndex index.php index.html
+</IfModule>

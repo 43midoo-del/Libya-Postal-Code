@@ -1,0 +1,173 @@
+/* Public postal-code lookup + printable card. */
+
+body.postal-lookup-body { background: #f7fafc; }
+body.postal-lookup-body .app-shell {
+  background: transparent;
+  padding: 1.5rem 1rem;
+  color: #0f172a;
+  min-height: 100vh;
+}
+
+.postal-lookup {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.4rem 1.4rem 1.7rem;
+  box-shadow: 0 6px 24px rgba(2, 6, 23, 0.06);
+}
+.postal-lookup__head h1 {
+  margin: 0 0 0.3rem;
+  font-size: 1.25rem;
+  color: #0c4a6e;
+}
+.postal-lookup__head .muted { color: #475569; font-size: 0.92rem; }
+.postal-lookup__head code.mono {
+  background: #f1f5f9; padding: 0.05rem 0.35rem; border-radius: 4px; font-weight: 600;
+}
+
+.postal-lookup__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.postal-lookup__form .row { display: flex; flex-direction: column; gap: 0.25rem; }
+.postal-lookup__form .form-label { font-size: 0.9rem; color: #334155; font-weight: 600; }
+.postal-lookup__form .pl-code {
+  font-size: 1.1rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  letter-spacing: 0.05em;
+  text-align: left;
+}
+.postal-lookup__form .pl-code:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18);
+}
+.postal-lookup__form .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.postal-lookup__form .btn,
+.postal-lookup__none .btn,
+.postal-card .btn,
+.postal-print .btn {
+  appearance: none;
+  font: inherit;
+  padding: 0.45rem 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+.btn-primary { background: #0ea5e9; color: #fff; border-color: #0284c7; }
+.btn-primary:hover { background: #0284c7; }
+.btn-ghost { background: #f8fafc; color: #0f172a; border-color: #cbd5e1; }
+.btn-ghost:hover { background: #e2e8f0; }
+
+.postal-lookup__none {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+}
+.postal-lookup__none h2 { margin: 0 0 0.3rem; font-size: 1rem; }
+
+.postal-card {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  color: #0f172a;
+}
+.postal-card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 0.6rem;
+}
+.postal-card__label { display: block; color: #64748b; font-size: 0.85rem; }
+.postal-card__code {
+  display: inline-block;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #0c4a6e;
+  letter-spacing: 0.06em;
+}
+.postal-card__actions { margin-inline-start: auto; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.postal-card__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0;
+  font-size: 0.95rem;
+}
+.postal-card__grid dt { color: #475569; font-weight: 600; }
+.postal-card__grid dd { margin: 0; }
+.postal-card__note { font-size: 0.82rem; color: #64748b; }
+
+/* --- Print card variant --- */
+body.postal-print-body { background: #fff; }
+body.postal-print-body .app-shell {
+  background: #fff;
+  padding: 1.4rem;
+  color: #0f172a;
+  min-height: 100vh;
+}
+.postal-print {
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.postal-card--print {
+  background: #ffffff;
+  border: 2px solid #0c4a6e;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(12, 74, 110, 0.12);
+}
+.postal-card--print .postal-card__code { font-size: 1.9rem; }
+.postal-card__brand {
+  margin-inline-start: auto;
+  font-size: 0.85rem;
+  color: #0c4a6e;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.postal-card__foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #64748b;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 0.5rem;
+}
+.postal-print__actions { display: flex; gap: 0.5rem; justify-content: center; }
+.postal-print__none { color: #7f1d1d; }
+
+/* Hide non-essential chrome when printing. */
+@media print {
+  body { background: #fff !important; }
+  .app-shell { padding: 0 !important; box-shadow: none !important; }
+  .app-footer, .no-print { display: none !important; }
+  .postal-card--print {
+    box-shadow: none;
+    page-break-after: avoid;
+    margin: 0 auto;
+    max-width: 100mm;
+  }
+}

@@ -1,0 +1,225 @@
+/* Boundary Editor — fixed single-screen workspace, sidebar on visual LEFT, map on visual RIGHT. */
+
+body.boundary-editor-body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+body.boundary-editor-body .app-shell {
+  max-width: none;
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.boundary-editor-body > .app-footer { display: none; }
+
+/* Slim 44px top bar (in place of the global app_header.php). */
+.be-bar {
+  flex: 0 0 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0 0.85rem;
+  background: rgba(2, 6, 23, 0.92);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  color: #e2e8f0;
+}
+.be-bar__title { font-weight: 700; color: #fde047; }
+.be-bar__role {
+  font-size: 0.78rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.35);
+  color: #67e8f9;
+  border: 1px solid rgba(103, 232, 249, 0.35);
+}
+.be-bar__nav {
+  display: flex;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+  flex-wrap: wrap;
+}
+.be-bar__link {
+  font-size: 0.85rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  text-decoration: none;
+  color: #cbd5e1;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.be-bar__link:hover { background: rgba(14, 116, 144, 0.25); border-color: rgba(103, 232, 249, 0.25); }
+.be-bar__link--active { background: rgba(14, 116, 144, 0.4); border-color: #67e8f9; color: #fff; }
+.be-bar__link--out { color: #fda4af; }
+
+.boundary-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.be-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row-reverse; /* RTL trick: sidebar visually LEFT, map visually RIGHT */
+}
+
+.be-panel {
+  flex: 0 0 320px;
+  min-width: 0;
+  min-height: 0;
+  background: rgba(15, 23, 42, 0.65);
+  border-inline-start: 1px solid rgba(148, 163, 184, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.be-tabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.2rem;
+  padding: 0.45rem;
+  background: rgba(2, 6, 23, 0.4);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.be-tab {
+  appearance: none;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+  padding: 0.4rem 0.15rem;
+  font-size: 0.82rem;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.be-tab:hover { background: rgba(30, 41, 59, 0.95); }
+.be-tab.is-active {
+  background: linear-gradient(180deg, #0e7490, #155e75);
+  border-color: #67e8f9;
+  color: #fff;
+  font-weight: 700;
+}
+
+.be-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.7rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.be-entity-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.be-props {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  padding: 0.6rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: rgba(2, 6, 23, 0.35);
+  margin: 0;
+}
+.be-props legend {
+  padding: 0 0.4rem;
+  font-size: 0.85rem;
+  color: rgba(226, 232, 240, 0.85);
+  font-weight: 600;
+}
+
+.be-stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.7rem;
+  margin: 0.3rem 0;
+  font-size: 0.82rem;
+}
+.be-stats dt { color: rgba(226, 232, 240, 0.65); }
+.be-stats dd { margin: 0; }
+
+.be-add-child {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+.be-add-child__ctx {
+  margin: 0 0 0.45rem;
+  line-height: 1.45;
+  font-size: 0.8rem;
+}
+.be-add-child__btn {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+.be-map-wrap .leaflet-container.be-map--placing {
+  cursor: crosshair;
+}
+
+.be-prop-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.be-prop-actions .btn { padding: 0.35rem 0.7rem; font-size: 0.82rem; flex: 1 1 auto; min-width: 4ch; }
+
+.be-map-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  background: #06121f;
+}
+
+#be-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.be-status {
+  position: absolute;
+  bottom: 0.55rem;
+  inset-inline-start: 0.55rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(15, 23, 42, 0.88);
+  border-radius: 8px;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  z-index: 500;
+  pointer-events: none;
+  max-width: calc(100% - 1.5rem);
+}
+.be-status.is-err { color: #fda4af; }
+
+/* Geoman draw controls in RTL — keep them LTR-oriented for icon clarity */
+.leaflet-pm-toolbar { direction: ltr; }
+
+/* Responsive: collapse sidebar to top half on narrow screens */
+@media (max-width: 900px) {
+  .be-grid { flex-direction: column; }
+  .be-panel { flex: 0 0 45%; border-inline-start: 0; border-bottom: 1px solid rgba(148, 163, 184, 0.18); }
+}
+
+.muted { color: rgba(226, 232, 240, 0.65); }
+.small { font-size: 0.78rem; }

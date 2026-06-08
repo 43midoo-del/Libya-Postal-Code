@@ -1,0 +1,2545 @@
+/* =====================================================================
+ * Libya Smart Postal — unified stylesheet (RTL).
+ *
+ * Section index:
+ *   1. Root variables (colors, radii, fonts) — :root
+ *   2. Reset + base + app shell + topbar + main nav
+ *   3. Forms + buttons + alerts + flash + auth card
+ *   4. Dashboard cards + data tables
+ *   5. Map base components (canvas, base-layer bar, coords)
+ *   6. Address workbench (create.php) — context bar, sidebar, GIS toolbox, map stack, success overlay, footer actions
+ *   7. (reserved) — legacy search-form styles preserved for resilience
+ *   8. Addresses list page (index.php) — filters + pagination
+ *   9. Utilities (visually-hidden, error page)
+ * ===================================================================== */
+
+/* Global RTL layout — English comments in code */
+:root {
+  --bg: #0c0f14;
+  --card: #151b24;
+  --text: #e8eef3;
+  --muted: #8b9aab;
+  --accent: #3b82f6;
+  --accent-dim: #2563eb;
+  --danger: #f87171;
+  --ok: #4ade80;
+  --info: #7dd3fc;
+  --border: #2a3441;
+  --radius: 12px;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  font-family: "Segoe UI", Tahoma, "Noto Naskh Arabic", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(120% 100% at 100% 0%, #1a2230 0%, #0c0f14 50%);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  right: 1rem;
+  top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  transform: translateY(-200%);
+  transition: transform 0.2s;
+  z-index: 9999;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 2px solid #fff;
+}
+
+/* Shell width */
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 2rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.app-shell--wide { max-width: 1280px; }
+.app-shell--auth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.app-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 1.25rem 0 0;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+}
+
+.main-panel { flex: 1; }
+
+/* Top bar */
+.topbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.topbar--map, .topbar--search { gap: 0.5rem; }
+.topbar__title { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+.topbar.topbar--map .topbar__title { font-size: 1.2rem; }
+.topbar.topbar--map .badge.badge--role { font-size: 0.75rem; }
+.topbar__cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem 0.75rem;
+}
+.topbar__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.topbar__logout {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: #fca5a5;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.topbar__logout:hover {
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
+}
+.topbar__logout:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (min-width: 720px) {
+  .topbar {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .topbar__title { max-width: 40%; }
+  .topbar__cluster { justify-content: flex-end; max-width: 60%; }
+}
+
+/* Main nav */
+.main-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem 0.35rem;
+}
+.main-nav__link {
+  display: inline-block;
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  text-decoration: none;
+  color: #cbd5e1;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.main-nav__link:hover {
+  background: #1e2836;
+  color: #fff;
+  border-color: var(--border);
+}
+.main-nav__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.main-nav__link.is-active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #e0eaff;
+  border-color: rgba(59, 130, 246, 0.45);
+}
+.main-nav__link--out { color: #fca5a5; }
+.main-nav__link--out:hover { background: rgba(248, 113, 113, 0.1); }
+
+.badge { display: inline-block; padding: 0.2rem 0.55rem; background: #1e2633; border-radius: 6px; font-size: 0.8rem; color: var(--muted); }
+.badge--role { font-weight: 600; }
+
+/* Auth */
+.auth-card {
+  max-width: 420px;
+  width: 100%;
+  margin: 0;
+  padding: 2rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.auth-title { margin: 0 0 0.25rem; font-size: 1.5rem; }
+.auth-sub { color: var(--muted); margin: 0 0 1.5rem; }
+
+/* Forms */
+.form-stack { display: flex; flex-direction: column; gap: 0.75rem; }
+.form-label { font-size: 0.9rem; color: var(--muted); }
+.form-input {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0d1219;
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-input:hover { border-color: #3d4a5c; }
+.form-input:focus {
+  border-color: #4b5563;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.35);
+  outline: none;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  font-size: 1rem;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn:active { transform: scale(0.98); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-primary { background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dim) 100%); color: #fff; }
+.btn-primary:hover { filter: brightness(1.05); }
+.btn-ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { background: #1a222e; }
+
+/* Unified alerts / flash */
+.alert {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid;
+}
+.flash-msg { font-size: 0.95rem; }
+.alert--ok {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #bbf7d0;
+}
+.alert--err {
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+.alert--info {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #dbeafe;
+}
+.empty-result {
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+}
+.code-pill { font-size: 0.85em; background: #1a2029; padding: 0.1em 0.35em; border-radius: 4px; }
+
+/* Legacy class names (keep) */
+.alert-error { background: rgba(248, 113, 113, 0.1); border: 1px solid var(--danger); color: #fecaca; }
+.alert-ok { background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #bbf7d0; }
+
+.content .intro { font-size: 1.1rem; }
+.muted { color: var(--muted); }
+.edit-hint { margin-bottom: 1rem; }
+
+/* Dashboard stats */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1rem;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  transition: transform 0.15s, border-color 0.15s;
+}
+.stat-card:hover { transform: translateY(-2px); border-color: #3d4a5c; }
+.stat-card__value { font-size: 2rem; font-weight: 700; color: #93c5fd; }
+.stat-card__label { color: var(--muted); font-size: 0.95rem; margin-top: 0.35rem; }
+.link-disabled { color: #64748b; }
+a.map-link { color: #93c5fd; text-decoration: none; border-bottom: 1px solid rgba(147, 197, 253, 0.35); }
+a.map-link:hover { color: #bfdbfe; }
+
+/* Map */
+.map-page { width: 100%; }
+.map-instructions { margin-bottom: 0.75rem; line-height: 1.5; }
+.map-canvas {
+  width: 100%;
+  min-height: 420px;
+  height: 55vh;
+  max-height: 720px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  z-index: 0;
+  background: #0a0e12;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+}
+.map-coords { margin-top: 1.25rem; }
+.map-coords__title { font-size: 1.1rem; margin: 0 0 0.75rem; }
+.map-coords__grid {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  max-width: 520px;
+}
+.map-coords__hint, .map-tiles-note { margin-top: 0.75rem; }
+.map-tiles-note a { color: #93c5fd; }
+
+/* Address */
+.addr-form { margin-top: 0.5rem; }
+.addr-form__row { margin-bottom: 0.85rem; }
+.addr-form__row--2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+@media (max-width: 600px) { .addr-form__row--2 { grid-template-columns: 1fr; } }
+.addr-form__actions { margin-top: 1rem; }
+
+/* Search */
+.search-page { width: 100%; }
+.search-form--card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+}
+.search-form__row { margin-bottom: 0.65rem; }
+.search-form__row--modes { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+.search-radio { font-size: 0.95rem; color: var(--muted); }
+.search-radio input { margin-left: 0.35rem; }
+.search-hint { font-size: 0.85rem; margin-top: 0.5rem; }
+.search-results__title { font-size: 1.1rem; margin: 1rem 0 0.5rem; }
+.search-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr); gap: 1.25rem; align-items: start; }
+@media (max-width: 900px) { .search-grid { grid-template-columns: 1fr; } }
+.search-table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.data-table th, .data-table td { border: 1px solid var(--border); padding: 0.5rem 0.6rem; text-align: right; }
+.data-table th { background: #121a24; color: #94a3b8; font-weight: 600; }
+.data-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.mono { font-family: ui-monospace, Consolas, monospace; }
+.map-canvas--search { min-height: 360px; height: 48vh; }
+.cell-actions { white-space: nowrap; }
+.inline-form { display: inline; margin: 0 0.2rem; }
+.form-static { padding: 0.55rem 0.65rem; background: #0d1219; border: 1px solid var(--border); border-radius: 8px; }
+.leaflet-container { font-family: inherit; }
+
+.map-stack-head--with-layers {
+  align-items: stretch;
+}
+.map-stack-head__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+.map-base-layer-switch {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  padding: 3px;
+  gap: 0;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(100, 116, 139, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+button.map-base-btn {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+  border: none;
+  border-radius: 7px;
+  padding: 0.4rem 0.78rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  color: #94a3b8;
+  background: transparent;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.08s ease;
+  white-space: nowrap;
+}
+button.map-base-btn:hover {
+  color: #e2e8f0;
+  background: rgba(51, 65, 85, 0.45);
+}
+button.map-base-btn:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+  z-index: 1;
+  position: relative;
+}
+button.map-base-btn.is-active {
+  color: #f8fafc;
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+button.map-base-btn:active {
+  transform: scale(0.97);
+}
+.map-base-btn__label {
+  pointer-events: none;
+}
+button.map-base-btn--toggle {
+  border-left: 1px solid rgba(100, 116, 139, 0.4);
+  color: #cbd5e1;
+}
+button.map-base-btn--toggle.is-active {
+  background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%);
+  color: #ecfeff;
+}
+button.map-base-btn--toggle[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  color: #64748b;
+  box-shadow: none;
+}
+button.map-base-btn--ghost {
+  color: #fbbf24;
+  border-left: 1px solid rgba(100, 116, 139, 0.4);
+}
+button.map-base-btn--ghost:hover {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+}
+
+.map-base-layer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin: 0 0 0.65rem;
+  padding: 0.55rem 0.85rem;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.9));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.map-base-layer-bar .map-base-layer-switch {
+  background: rgba(2, 6, 23, 0.55);
+}
+.map-base-layer-bar__label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.app-shell.app-shell--wide.app-shell--mgr {
+  max-width: none;
+  width: 100%;
+  margin-inline: 0;
+  padding-inline: 0;
+  padding-top: 0.75rem;
+  padding-bottom: 1.5rem;
+  box-sizing: border-box;
+}
+.app-shell.app-shell--wide.app-shell--mgr .app-footer {
+  padding-inline: clamp(0.75rem, 2.5vw, 1.5rem);
+}
+
+.error-page { text-align: center; padding: 2rem 0; }
+.error-page__code { font-size: 3rem; margin: 0; color: #f87171; }
+.error-page__msg { font-size: 1.1rem; max-width: 36ch; margin: 1rem auto; }
+.error-page__links { color: var(--muted); }
+
+
+/* =====================================================================
+ * SECTION 6 — Address workbench (formerly css/style.css)
+ * Loaded only on views/addresses/create.php in the previous layout; now
+ * always loaded so create.php can drop its dedicated <link>.
+ * --------------------------------------------------------------------- */
+
+/**
+ * Address entry GIS dashboard — dark professional layout.
+ * Requires app.css loaded first (uses :root variables).
+ */
+
+.page--addr-dashboard {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.app-shell.app-shell--wide.app-shell--mgr main.page--addr-dashboard {
+  padding-inline: 0;
+  max-width: none;
+}
+.app-shell.app-shell--wide.app-shell--mgr main.page--addr-dashboard > .alert.flash-msg,
+.app-shell.app-shell--wide.app-shell--mgr main.page--addr-dashboard > #addr-api-msg {
+  margin-inline: clamp(0.55rem, 2vw, 1.25rem);
+}
+
+.addr-page-mgr {
+  margin-top: 0.25rem;
+  width: 100%;
+}
+
+/* —— Header: dynamic context —— */
+.addr-context-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem 0.5rem;
+  padding: 0.45rem clamp(0.45rem, 1.2vw, 0.85rem);
+  margin-bottom: 0;
+  background: linear-gradient(180deg, #334155 0%, #1e293b 55%, #0f172a 100%);
+  border: none;
+  border-top: 1px solid #475569;
+  border-bottom: 1px solid #475569;
+  border-radius: 0;
+  box-shadow: none;
+}
+@media (max-width: 820px) {
+  .addr-context-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.addr-context-bar__item {
+  text-align: right;
+  padding: 0.25rem 0.3rem;
+  border-inline-end: 1px solid rgba(148, 163, 184, 0.28);
+}
+.addr-context-bar__item:last-child {
+  border-inline-end: none;
+}
+.addr-context-bar__label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  margin-bottom: 0.2rem;
+}
+.addr-context-bar__value {
+  font-size: 0.92rem;
+  color: #f8fafc;
+  font-weight: 700;
+}
+
+/* —— لوحة عنوان حديثة: شريط سياق + أعمدة بفجوات —— */
+.addr-dash-top {
+  padding-inline: clamp(0.55rem, 2vw, 1.1rem);
+  padding-block: clamp(0.35rem, 1.2vw, 0.55rem) 0.28rem;
+  background: radial-gradient(120% 140% at 100% 0%, rgba(59, 130, 246, 0.09) 0%, transparent 45%),
+    linear-gradient(180deg, #0b1528 0%, #060d16 55%, #04070d 100%);
+}
+.addr-context-bar--modern {
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  margin-inline: 0;
+  margin-bottom: 0;
+}
+.addr-context-bar__label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: #a5b4c8;
+}
+.addr-context-bar__item {
+  border-inline-end-color: rgba(148, 163, 184, 0.18);
+  padding-inline: clamp(0.35rem, 1.2vw, 0.6rem);
+}
+.addr-context-bar__value.mono {
+  color: #e0f2fe;
+}
+
+
+.map-stack-head__intro {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.map-stack-head__controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.addr-zoom-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.85rem;
+  padding: 0.32rem 0.62rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #bae6fd;
+  background: rgba(8, 47, 73, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.addr-zoom-pill--threshold {
+  color: #ecfccb;
+  background: rgba(22, 101, 52, 0.5);
+  border-color: rgba(74, 222, 128, 0.55);
+}
+
+.addr-map-flow {
+  list-style: none;
+  margin: 0.52rem 0 0;
+  padding: 0.42rem 0.45rem;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.38rem;
+  width: 100%;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+@media (max-width: 620px) {
+  .addr-map-flow {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.addr-map-flow__step {
+  margin: 0;
+  padding: 0.32rem 0.35rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 8px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(71, 85, 105, 0.45);
+}
+.addr-map-flow__key {
+  display: inline-block;
+  margin-inline-start: 0.15rem;
+  font-weight: 900;
+  color: #64748b;
+}
+.addr-map-flow__step.is-done {
+  background: rgba(22, 101, 52, 0.45);
+  border-color: rgba(74, 222, 128, 0.4);
+  color: #bbf7d0;
+}
+.addr-map-flow__step.is-done .addr-map-flow__key {
+  color: #86efac;
+}
+.addr-map-flow__step.is-current {
+  background: rgba(30, 64, 175, 0.55);
+  border-color: rgba(96, 165, 250, 0.6);
+  color: #dbeafe;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+}
+.addr-map-flow__step.is-current .addr-map-flow__key {
+  color: #93c5fd;
+}
+.addr-map-flow__step.is-next {
+  opacity: 0.82;
+}
+
+.map-base-layer-switch--modern {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.map-marker-slot__hint {
+  flex: 1 1 200px;
+  font-size: 0.62rem;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+.map-canvas-wrap--mgr .map-coords-readout--chip {
+  position: absolute;
+  inset-inline-end: 12px;
+  bottom: 12px;
+  left: auto;
+  right: 12px;
+  width: auto;
+  max-width: min(94%, 340px);
+  padding: 0.38rem 0.82rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.4);
+}
+
+.addr-sidebar__masthead {
+  padding-bottom: 0.42rem;
+  margin-bottom: 0.52rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.addr-form-card {
+  padding: 0.5rem;
+  margin-top: 0.08rem;
+  border-radius: 12px;
+  background: rgba(6, 12, 24, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.addr-form__actions--split {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.btn--pill {
+  border-radius: 999px !important;
+  padding-inline: 1rem !important;
+}
+
+.btn--primary-glow {
+  box-shadow: 0 4px 20px rgba(34, 197, 94, 0.42);
+}
+
+.addr-search-block__toggle {
+  border-radius: 10px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.addr-dashboard-footer.addr-dashboard-footer--modern {
+  justify-content: space-between;
+  align-items: center;
+  border-top-color: rgba(148, 163, 184, 0.12);
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.98) 0%, #020617 100%);
+  backdrop-filter: blur(8px);
+}
+
+.btn--pill-footer {
+  border-radius: 999px !important;
+}
+
+.btn--footer-soft {
+  background: rgba(71, 85, 105, 0.5) !important;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #e2e8f0;
+}
+
+/* —— لوحة العنوان (dir=rtl على الحاوية): إدارة العنوان يمينًا | خريطة وسطًا | حدود القطعة يسارًا —— */
+.add-address-workbench {
+  display: grid;
+  grid-template-columns: minmax(200px, min(30vw, 360px)) minmax(260px, 1fr) minmax(130px, 12vw);
+  gap: 0;
+  min-height: min(68vh, 780px);
+  width: 100%;
+  background: #0a0f18;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+.add-address-workbench.add-address-workbench--modern {
+  gap: clamp(8px, 1.8vw, 14px);
+  padding: clamp(8px, 1.8vw, 14px);
+  background: radial-gradient(80% 50% at 50% -10%, rgba(56, 189, 248, 0.08), transparent),
+    linear-gradient(180deg, #060b14 0%, #070f1a 100%);
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  overflow: visible;
+  border-radius: 0;
+}
+
+@media (max-width: 720px) {
+  .add-address-workbench {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .add-address-workbench .add-address__map-stack {
+    order: 1;
+    min-height: 360px;
+  }
+  .add-address-workbench .add-address__sidebar {
+    order: 2;
+  }
+  .add-address-workbench .gis-toolbox {
+    order: 3;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* —— Left: GIS toolbox (light panel like reference) —— */
+.gis-toolbox {
+  padding: 0.85rem 0.75rem 1rem;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+  color: #0f172a;
+  border-inline-start: none;
+  border-inline-end: none;
+  overflow-y: auto;
+  max-height: min(88vh, 860px);
+}
+.gis-toolbox.gis-toolbox--modern {
+  border-radius: 14px;
+  border: 1px solid rgba(51, 65, 85, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 6px 24px rgba(15, 23, 42, 0.2);
+}
+.gis-toolbox__title {
+  margin: 0 0 0.65rem;
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #0f172a;
+  border-bottom: 2px solid #3b82f6;
+  padding-bottom: 0.35rem;
+}
+.gis-fieldset {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.5rem 0.55rem 0.65rem;
+  margin: 0 0 0.65rem;
+  background: #fff;
+}
+.gis-fieldset legend {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0 0.35rem;
+  color: #334155;
+}
+.gis-radio-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+.gis-radio-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+}
+.gis-select,
+.gis-toolbox textarea {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #94a3b8;
+  font-size: 0.8rem;
+  background: #fff;
+  color: #0f172a;
+}
+.gis-toolbox textarea {
+  min-height: 3.2rem;
+  resize: vertical;
+}
+.gis-muted {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin: 0.25rem 0 0;
+}
+
+.gis-palette {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+.gis-palette button {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 2px solid #334155;
+  cursor: pointer;
+  padding: 0;
+  min-height: 28px;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.gis-palette button:hover {
+  transform: scale(1.05);
+}
+.gis-palette button.is-selected {
+  box-shadow: 0 0 0 3px #0f172a;
+  outline: 2px solid #fbbf24;
+}
+.gis-palette button[data-color="#ef4444"] { background: #ef4444; }
+.gis-palette button[data-color="#f97316"] { background: #f97316; }
+.gis-palette button[data-color="#eab308"] { background: #eab308; }
+.gis-palette button[data-color="#22c55e"] { background: #22c55e; }
+.gis-palette button[data-color="#14b8a6"] { background: #14b8a6; }
+.gis-palette button[data-color="#3b82f6"] { background: #3b82f6; }
+.gis-palette button[data-color="#8b5cf6"] { background: #8b5cf6; }
+.gis-palette button[data-color="#ec4899"] { background: #ec4899; }
+.gis-palette button[data-color="#64748b"] { background: #64748b; }
+.gis-palette button[data-color="#0f172a"] { background: #0f172a; }
+.gis-palette button[data-color="#ffffff"] { background: #ffffff; border-color: #94a3b8; }
+.gis-palette button[data-color="#facc15"] { background: #facc15; }
+
+.gis-palette button[data-color="#a855f7"] { background: #a855f7; }
+.gis-palette button[data-color="#e2e8f0"] { background: #e2e8f0; border-color: #64748b; }
+
+.gis-layer-toggles {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed #94a3b8;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+}
+.gis-layer-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.gis-toolbox--compact {
+  padding: 0.45rem 0.5rem 0.55rem;
+  max-height: min(88vh, 860px);
+}
+.gis-toolbox--compact .gis-toolbox__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  padding-bottom: 0.2rem;
+}
+.gis-fieldset--tight {
+  padding: 0.35rem 0.4rem 0.45rem;
+  margin: 0 0 0.4rem;
+}
+.gis-fieldset--tight .gis-tool-btn {
+  padding: 0.32rem 0.4rem;
+  font-size: 0.72rem;
+}
+.gis-legend-sm {
+  font-size: 0.7rem !important;
+}
+.gis-layer-toggles--tight {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  font-size: 0.68rem;
+}
+.gis-toolbox--compact .gis-palette {
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+}
+.gis-toolbox--compact .gis-palette button {
+  min-height: 24px;
+}
+.gis-toolbox--compact textarea {
+  min-height: 2.4rem;
+  padding: 0.35rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.gis-toolbox--parcel .gis-toolbox__lead {
+  margin: 0 0 0.38rem;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: #475569;
+}
+.gis-fieldset--minimal {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.28rem 0.32rem 0.34rem;
+  margin: 0 0 0.32rem;
+  background: #fff;
+}
+.gis-palette--mini {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.2rem;
+  margin-top: 0.15rem;
+}
+.gis-palette--mini button {
+  min-height: 17px;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  border: 1px solid #475569;
+  padding: 0;
+  cursor: pointer;
+}
+.gis-toolbox--compact .gis-palette--mini button {
+  min-height: 17px;
+}
+.gis-parcel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.26rem;
+  margin-bottom: 0.32rem;
+}
+.gis-parcel-actions .gis-tool-btn {
+  margin-top: 0;
+}
+.gis-tool-btn--secondary {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+.gis-tool-btn--ghost {
+  background: transparent;
+  border-color: #cbd5e1;
+  color: #334155;
+  font-size: 0.68rem;
+}
+.gis-tool-btn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.gis-toolbox--readonly {
+  pointer-events: none;
+  opacity: 0.52;
+}
+.add-address__map-stack {
+  display: flex;
+  flex-direction: column;
+  direction: ltr;
+  background: #05080d;
+  border-inline-end: none;
+  box-shadow:
+    inset 1px 0 0 rgba(148, 163, 184, 0.3),
+    inset -1px 0 0 rgba(148, 163, 184, 0.3);
+  min-height: min(54vh, 560px);
+}
+.add-address__map-stack.add-address__map-stack--modern {
+  border-radius: 14px;
+  overflow: hidden;
+  align-self: stretch;
+  border-inline: none;
+  border: 1px solid rgba(51, 65, 85, 0.5);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background: radial-gradient(120% 80% at 50% -20%, rgba(99, 102, 241, 0.12), transparent),
+    #030712;
+  min-height: 0;
+}.map-stack-head {
+  position: relative;
+  z-index: 1200;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, #050a18 0%, #0f172a 45%, #1e293b 100%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  box-shadow: inset 0 -1px 0 rgba(56, 189, 248, 0.18);
+}
+.map-stack-head.map-stack-head--modern {
+  background: linear-gradient(105deg, #0c1729 0%, #111827 52%, #0f172a 100%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0;
+}
+.map-stack-head__title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #fef9c3;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 6px rgba(251, 191, 36, 0.35);
+}
+.map-stack-head__row--toolbar {
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  flex-wrap: wrap;
+}
+.map-stack-head__scale {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+.map-stack-head--compact {
+  padding: 0.35rem 0.65rem;
+}
+.map-stack-head--compact .map-stack-head__title {
+  font-size: 0.82rem;
+}
+.map-stack-head--compact .map-stack-head__scale {
+  font-size: 0.68rem;
+}
+
+.map-stack-head__hint {
+  width: 100%;
+  margin: 0.15rem 0 0;
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.map-canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 280px;
+  overflow: hidden;
+  background: #01030a;
+}
+.map-canvas-wrap--mgr .leaflet-container,
+.map-page .leaflet-container {
+  background: #01030a;
+  font-family: inherit;
+}
+.map-canvas-wrap--mgr .map-canvas--add {
+  width: 100%;
+  min-height: 380px;
+  height: min(56vh, 620px);
+  border: none;
+  border-radius: 0;
+  background: #01030a;
+}
+
+/* طبقات الخريطة: أسفل اليسار الفعلي (left/bottom) حتى لا يعكس dir/inset-inline الموضع في RTL */
+.map-canvas-wrap--mgr .map-layer-controls-float {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: auto;
+  inset-inline-start: unset;
+  inset-inline-end: unset;
+  z-index: 1200;
+  display: inline-flex;
+  align-items: stretch;
+  flex-direction: row;
+  gap: 0;
+  padding: 3px;
+  margin: 0;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.58);
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+.map-canvas-wrap--mgr .map-layer-controls-float.map-base-layer-switch--modern {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 4px 18px rgba(0, 0, 0, 0.38);
+}
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn {
+  flex-shrink: 0;
+}
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn--icon-only {
+  width: 2.1rem;
+  height: 2.1rem;
+  min-width: 2.1rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.map-canvas-wrap--mgr .map-layer-controls-float .map-base-btn__icon {
+  display: block;
+  flex-shrink: 0;
+}
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn--icon-only:hover {
+  color: #e2e8f0;
+  background: rgba(51, 65, 85, 0.48);
+}
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn--icon-only.is-active {
+  color: #f8fafc;
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn--fit-libya {
+  min-width: 2.65rem;
+  padding-inline: 0.38rem;
+  padding-block: 0.28rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  opacity: 0.8;
+  line-height: 1.15;
+}
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn--fit-libya:hover,
+.map-canvas-wrap--mgr .map-layer-controls-float button.map-base-btn--fit-libya:focus-visible {
+  opacity: 1;
+}
+
+/* زر وضع العلامة: يبقى جانب بداية السطر (بعد شريط تكبير Leaflet) */
+.map-canvas-wrap--mgr .map-marker-cta-float {
+  position: absolute;
+  top: 10px;
+  inset-inline-start: 48px;
+  z-index: 1190;
+  max-width: min(58vw, 300px);
+  margin: 0;
+}
+.map-canvas-wrap--mgr .map-marker-cta-float button.map-base-btn--marker-cta:not(:disabled):not(.is-active) {
+  margin-inline-start: 0;
+  padding-inline: 0.72rem;
+  padding-block: 0.36rem;
+  font-weight: 800;
+  font-size: 0.7rem;
+  color: #fdf4ff;
+  letter-spacing: 0.01em;
+  background: linear-gradient(180deg, rgba(217, 70, 239, 0.55) 0%, rgba(126, 34, 206, 0.42) 100%);
+  border: 1px solid rgba(243, 232, 255, 0.45);
+  box-shadow:
+    0 0 0 2px rgba(192, 38, 211, 0.22),
+    0 4px 16px rgba(109, 40, 217, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.map-canvas-wrap--mgr .map-marker-cta-float button.map-base-btn--marker-cta:not(:disabled):not(.is-active):hover {
+  color: #fff;
+  filter: brightness(1.06);
+}
+.map-canvas-wrap--mgr .map-marker-cta-float button.map-base-btn--marker-cta:is(:disabled) {
+  box-shadow: none;
+  filter: none;
+}
+.map-canvas-wrap--mgr .map-marker-cta-float button.map-base-btn--marker.is-active {
+  background: linear-gradient(180deg, #c026d3 0%, #86198f 100%);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.libya-sky-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 450;
+  background: radial-gradient(ellipse at center, transparent 36%, rgba(2, 6, 23, 0.25) 72%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+.map-stack-head--with-layers {
+  align-items: stretch;
+}
+.map-stack-head > .map-stack-head__marker-row {
+  flex: 1 1 100%;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1rem;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(71, 85, 105, 0.35);
+}
+.map-stack-head__marker-row:not([hidden]) {
+  animation: marker-cta-row-in 0.2s ease-out;
+}
+@keyframes marker-cta-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.map-stack-head__marker-row button.map-base-btn--marker-cta:not(:disabled):not(.is-active) {
+  margin-inline-start: 0;
+}
+.map-stack-head .map-base-layer-switch {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 3px;
+  gap: 0;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
+}
+.map-stack-head button.map-base-btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.74rem;
+}
+.map-stack-head button.map-base-btn:hover {
+  color: #e2e8f0;
+  background: rgba(51, 65, 85, 0.4);
+}
+.map-stack-head button.map-base-btn.is-active {
+  color: #f8fafc;
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.map-stack-head button.map-base-btn:active {
+  transform: scale(0.97);
+}
+.map-stack-head button.map-base-btn--toggle.is-active {
+  background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%);
+}
+.map-stack-head button.map-base-btn--toggle[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+  color: #64748b;
+  box-shadow: none;
+}
+.map-stack-head button.map-base-btn--ghost {
+  color: #fbbf24;
+}
+.map-stack-head button.map-base-btn--ghost:hover {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fde68a;
+}
+/* زر بارز لتفعيل «وضع علامة» قبل النقر على الخريطة */
+.map-stack-head button.map-base-btn--marker-cta:not(:disabled):not(.is-active) {
+  margin-inline-start: 0.35rem;
+  padding-inline: 0.82rem;
+  font-weight: 800;
+  color: #fdf4ff;
+  letter-spacing: 0.01em;
+  background: linear-gradient(180deg, rgba(217, 70, 239, 0.55) 0%, rgba(126, 34, 206, 0.42) 100%);
+  border: 1px solid rgba(243, 232, 255, 0.45);
+  box-shadow:
+    0 0 0 2px rgba(192, 38, 211, 0.22),
+    0 4px 16px rgba(109, 40, 217, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.map-stack-head button.map-base-btn--marker-cta:not(:disabled):not(.is-active):hover {
+  color: #fff;
+  filter: brightness(1.06);
+}
+.map-stack-head button.map-base-btn--marker-cta:is(:disabled) {
+  box-shadow: none;
+  filter: none;
+}
+.map-stack-head button.map-base-btn--marker.is-active {
+  background: linear-gradient(180deg, #c026d3 0%, #86198f 100%);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+.map-stack-head button.map-base-btn--marker:not(.map-base-btn--marker-cta):not(:disabled):hover {
+  color: #fae8ff;
+  background: rgba(192, 38, 211, 0.22);
+}
+.map-stack-head button.map-base-btn--marker:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.map-coords-readout {
+  position: absolute;
+  right: 0;
+  left: 0;
+  bottom: 0;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.78rem;
+  background: rgba(2, 6, 23, 0.92);
+  color: #e2e8f0;
+  border-top: 1px solid rgba(51, 65, 85, 0.9);
+  z-index: 500;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.map-coords-readout__ar {
+  color: #94a3b8;
+  font-size: 0.74rem;
+}
+.map-coords-readout__vals {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.map-tiles-note--inline {
+  margin: 0;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.72rem;
+  background: #0f172a;
+  color: #94a3b8;
+  border-top: 1px solid var(--border);
+}
+
+.postal-map-label {
+  background: transparent;
+  border: none;
+}
+.postal-map-label span {
+  display: inline-block;
+  padding: 0.18rem 0.46rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.86);
+  border: 1px solid rgba(250, 204, 21, 0.6);
+  text-shadow: 0 1px 3px #000, 0 0 5px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.leaflet-tooltip.shabiya-tooltip {
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+.leaflet-tooltip.shabiya-tooltip::before {
+  display: none;
+}
+
+/* —— عمود حقول الإدارة (بحسب dir=rtl يظهر جهة يمين الشاشة) —— */
+.add-address__sidebar {
+  padding: 0.9rem 1rem 1.15rem;
+  background: linear-gradient(165deg, #1e4976 0%, #15365b 35%, #0c1e33 100%);
+  overflow-y: auto;
+  max-height: min(90vh, 920px);
+}
+.panel--mgr--compact {
+  padding: 0.42rem 0.48rem 0.55rem;
+  max-height: min(92vh, 940px);
+}
+.panel--mgr__title {
+  margin: 0 0 0.3rem;
+  font-size: 1.08rem;
+  color: #fff;
+  font-weight: 800;
+}
+.panel--mgr--compact .panel--mgr__title {
+  font-size: 0.95rem;
+  margin-bottom: 0.15rem;
+}
+.panel--mgr__subtitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #cbd5e1;
+}
+.panel--mgr__hint {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.addr-search-block {
+  margin-bottom: 0.55rem;
+}
+.addr-search-block__toggle {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid #475569;
+  background: #0f172a;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+.addr-search-block__toggle:hover {
+  background: #1e293b;
+}
+.addr-search-panel {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+  margin-top: 0.45rem;
+}
+.addr-search-panel[hidden] {
+  display: none !important;
+}
+.addr-search-panel .form-input--mgr {
+  flex: 1;
+  min-width: 0;
+}
+.btn--find {
+  flex-shrink: 0;
+  padding: 0.55rem 0.85rem;
+  background: linear-gradient(180deg, #22c55e 0%, #15803d 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn--find--inline {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.78rem;
+}
+.btn--find:hover {
+  filter: brightness(1.06);
+}
+
+.addr-form--compact .addr-form__row {
+  margin-bottom: 0.48rem;
+}
+.addr-form--compact .form-label {
+  font-size: 0.76rem;
+}
+.addr-form--compact .form-input--mgr {
+  padding: 0.42rem 0.5rem;
+  font-size: 0.82rem;
+}
+.addr-form__actions--compact {
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  gap: 0.4rem !important;
+  margin-top: 0.55rem !important;
+}
+.addr-form__actions--compact .btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.65rem !important;
+  font-size: 0.88rem !important;
+}
+
+/* شبكة حقول إدارة العنوان (3 + 2 + نوع بجانب المالك) */
+.addr-form--grid .addr-form__row--3 {
+  display: grid;
+  grid-template-columns: minmax(0, 0.88fr) minmax(0, 1.12fr) minmax(0, 1fr);
+  gap: 0.24rem 0.28rem;
+  margin-bottom: 0.42rem;
+  align-items: end;
+}
+.addr-form--grid .addr-form__row--3 .form-label {
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+.addr-form--grid .addr-form__row--3 .form-input--mgr-tight {
+  padding: 0.26rem 0.28rem !important;
+  font-size: 0.7rem !important;
+  min-height: 1.85rem;
+}
+.addr-form--grid .addr-form__row--2,
+.addr-form--grid .addr-form__row--sector {
+  display: grid;
+  gap: 0.32rem 0.4rem;
+  margin-bottom: 0.42rem;
+  align-items: end;
+}
+.addr-form--grid .addr-form__row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.addr-form--grid .addr-form__row--sector {
+  grid-template-columns: minmax(2.75rem, 18%) minmax(0, 1fr);
+}
+.addr-form__cell {
+  min-width: 0;
+}
+.addr-form__cell .form-label {
+  margin-bottom: 0.12rem;
+  display: block;
+}
+.form-input--mgr-tight {
+  padding: 0.34rem 0.42rem !important;
+  font-size: 0.78rem !important;
+  border-radius: 6px;
+}
+.addr-form__row--type-owner {
+  display: grid;
+  grid-template-columns: minmax(5rem, 26%) minmax(0, 1fr);
+  gap: 0.38rem;
+  align-items: end;
+  margin-bottom: 0.42rem;
+}
+.addr-form__cell--type select {
+  width: 100%;
+}
+.postal-auto-badge--sm {
+  padding: 0.18rem 0.32rem;
+  font-size: 0.6rem;
+}
+.add-address__sidebar.panel--mgr--compact {
+  max-height: none;
+  overflow-y: visible;
+}
+.addr-form--grid.addr-form--mgr .addr-form__row {
+  margin-bottom: 0.42rem;
+}
+@media (max-width: 520px) {
+  .addr-form--grid .addr-form__row--3 {
+    grid-template-columns: 1fr;
+  }
+  .addr-form--grid .addr-form__row--2,
+  .addr-form--grid .addr-form__row--sector {
+    grid-template-columns: 1fr;
+  }
+  .addr-form__row--type-owner {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-input--mgr {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+.form-input--mgr:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+}
+
+.add-address__badge {
+  display: inline-block;
+  margin-bottom: 0.55rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  font-size: 0.8rem;
+  color: #fef9c3;
+}
+
+.addr-form--mgr .addr-form__row {
+  margin-bottom: 0.68rem;
+}
+.addr-form--mgr .form-label {
+  color: #e2e8f0;
+  font-size: 0.82rem;
+}
+
+.postal-property-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.postal-property-row__input {
+  flex: 1;
+  min-width: 0;
+}
+.postal-auto-badge {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0.28rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #fecaca;
+  background: rgba(153, 27, 27, 0.55);
+  border: 1px solid #f87171;
+  white-space: nowrap;
+}
+
+.field-help {
+  display: block;
+  margin-top: 0.22rem;
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+.addr-form__row--2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+}
+@media (max-width: 400px) {
+  .addr-form__row--2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.addr-form__actions--mgr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+.addr-form__actions--mgr .btn {
+  width: 100%;
+  padding: 0.72rem 1rem;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.btn--reset {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #475569;
+}
+.btn--reset:hover {
+  background: #1e293b;
+}
+
+.btn--save-new {
+  background: linear-gradient(180deg, #22c55e 0%, #166534 100%);
+  color: #fff;
+  border: none;
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.35);
+}
+
+.btn--save-edit {
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #fff;
+  border: none;
+}
+
+.btn--delete {
+  background: transparent;
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.65);
+}
+
+.btn--qr {
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #64748b;
+  font-size: 0.88rem;
+}
+
+.addr-form--edit-block {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.3);
+}
+.addr-form--edit-block__title {
+  margin: 0 0 0.55rem;
+  font-size: 0.92rem;
+  color: #f1f5f9;
+}
+
+.postal-segments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+}
+.postal-segments__cell {
+  min-width: 2.1rem;
+  padding: 0.38rem 0.5rem;
+  text-align: center;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #0f172a;
+  background: #f1f5f9;
+  border-radius: 5px;
+  border: 1px solid #cbd5e1;
+}
+.postal-segments__cell--prop {
+  min-width: 2.6rem;
+}
+.postal-segments__sep {
+  color: #94a3b8;
+  font-weight: 800;
+}
+
+.form-static--mgr {
+  background: rgba(15, 23, 42, 0.5);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+}
+
+.panel--mgr__footnote {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+.panel--mgr__migrate {
+  margin: 0.85rem 0 0;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.addr-save-success {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+.addr-save-success[hidden] {
+  display: none !important;
+}
+.addr-save-success__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(4px);
+}
+.addr-save-success__dialog {
+  position: relative;
+  z-index: 1;
+  max-width: 28rem;
+  width: 100%;
+  max-height: min(90vh, 640px);
+  overflow: auto;
+  padding: 1.25rem 1.35rem 1.1rem;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+  text-align: right;
+}
+.addr-save-success__title {
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #f8fafc;
+}
+.addr-save-success__lead {
+  margin: 0 0 0.95rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.addr-save-success__summary {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.7rem;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(100, 116, 139, 0.4);
+  border-radius: 9px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.addr-save-success__line {
+  margin: 0.15rem 0;
+}
+.addr-save-success__qr-wrap {
+  margin: 0 0 1rem;
+}
+.addr-save-success__qr-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 700;
+}
+.addr-save-success__qr {
+  display: inline-flex;
+  padding: 0.65rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+.addr-save-success__qr img {
+  display: block;
+}
+.addr-save-success__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  justify-content: flex-end;
+}
+
+/* —— Footer global actions —— */
+.addr-dashboard-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.65rem;
+  justify-content: flex-end;
+  margin-top: 0;
+  padding: 0.65rem clamp(0.5rem, 2vw, 1.25rem);
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.addr-dashboard-footer .btn {
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+  border: none;
+  display: inline-block;
+}
+.btn--exit {
+  background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%);
+  color: #fff;
+}
+.btn--scene {
+  background: linear-gradient(180deg, #6b7c3d 0%, #4a5530 100%);
+  color: #f8fafc;
+  border: 1px solid #57534e;
+}
+
+.addr-api-msg {
+  margin-bottom: 0.65rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.92rem;
+}
+.addr-api-msg--ok {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.5);
+  color: #bbf7d0;
+}
+.addr-api-msg--err {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
+.addr-search-results {
+  margin: 0.5rem 0 0.75rem;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  font-size: 0.78rem;
+  display: none;
+}
+.addr-search-results.is-open {
+  display: block;
+}
+.addr-search-results button {
+  display: block;
+  width: 100%;
+  text-align: right;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.6);
+  background: transparent;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-family: inherit;
+}
+.addr-search-results button:hover {
+  background: rgba(59, 130, 246, 0.2);
+}
+.addr-search-results button:last-child {
+  border-bottom: none;
+}
+
+.gis-toolbox [data-map-tool].is-active {
+  outline: 2px solid #2563eb;
+  background: #dbeafe;
+}
+.gis-tool-btn {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.45rem;
+  font-size: 0.74rem;
+  border-radius: 6px;
+  border: 1px solid #94a3b8;
+  background: #f8fafc;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: right;
+}
+.gis-tool-btn:hover {
+  background: #e2e8f0;
+}
+
+/* —— لوحة العنوان: شاشة واحدة (بدون تمرير الصفحة)، رسائل ثابتة لتفادي تحريك الخريطة —— */
+body.addr-dashboard-one-screen {
+  margin: 0;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.addr-dashboard-one-screen > .skip-link {
+  flex-shrink: 0;
+}
+body.addr-dashboard-one-screen > .app-shell.app-shell--wide.app-shell--mgr {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+body.addr-dashboard-one-screen .app-shell > main.map-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Global footer sits after .app-shell closes (see foot.php), not inside it */
+body.addr-dashboard-one-screen > .app-footer {
+  display: none;
+}
+body.addr-dashboard-one-screen main.page--addr-dashboard:has(.addr-save-success:not([hidden])) > #addr-api-msg {
+  display: none !important;
+}
+body.addr-dashboard-one-screen main.page--addr-dashboard > .alert.flash-msg,
+body.addr-dashboard-one-screen main.page--addr-dashboard > #addr-api-msg:not([hidden]) {
+  position: fixed;
+  z-index: 30000;
+  left: 50%;
+  transform: translateX(-50%);
+  top: clamp(0.35rem, 2.5vh, 0.85rem);
+  max-width: min(94vw, 520px);
+  width: max-content;
+  margin: 0 !important;
+  pointer-events: none;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.42);
+}
+body.addr-dashboard-one-screen .addr-page-mgr {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 0;
+}
+body.addr-dashboard-one-screen .addr-dash-top {
+  padding-block: clamp(0.12rem, 0.55vw, 0.28rem) 0.18rem;
+}
+body.addr-dashboard-one-screen .addr-context-bar {
+  flex-shrink: 0;
+}
+body.addr-dashboard-one-screen .add-address-workbench {
+  flex: 1;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+body.addr-dashboard-one-screen .gis-toolbox,
+body.addr-dashboard-one-screen .add-address__sidebar {
+  max-height: none;
+  min-height: 0;
+  align-self: stretch;
+  overflow-y: auto;
+}
+body.addr-dashboard-one-screen .add-address__map-stack {
+  flex: 1;
+  min-width: 0;
+  min-height: 0 !important;
+}
+body.addr-dashboard-one-screen .map-canvas-wrap {
+  flex: 1;
+  min-height: 0;
+}
+body.addr-dashboard-one-screen .map-canvas-wrap--mgr .map-canvas--add {
+  height: 100% !important;
+  min-height: 120px !important;
+}
+body.addr-dashboard-one-screen .map-tiles-note--inline {
+  display: none;
+}
+body.addr-dashboard-one-screen .addr-dashboard-footer {
+  flex-shrink: 0;
+  padding: 0.35rem 0.45rem;
+}
+body.addr-dashboard-one-screen .addr-dashboard-footer .btn {
+  padding: 0.42rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  body.addr-dashboard-one-screen .add-address-workbench {
+    overflow-y: auto;
+  }
+}
+
+
+/* =====================================================================
+ * SECTION 8 — Addresses list page (views/addresses/index.php)
+ * --------------------------------------------------------------------- */
+
+.addresses-page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.addresses-page__heading { flex: 1 1 280px; }
+.addresses-page__title { margin: 0 0 0.25rem; font-size: 1.25rem; }
+.addresses-page__lead { margin: 0; font-size: 0.92rem; }
+.addresses-page__add { white-space: nowrap; }
+
+.addresses-filters {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1rem 0.85rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+.addresses-filters__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+}
+.addresses-filters__cell { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.addresses-filters__cell--grow { grid-column: span 2; }
+.addresses-filters__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.addresses-filters__print { margin-inline-start: auto; }
+
+.addresses-results__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.addresses-results__count { font-size: 0.95rem; }
+
+.addresses-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .addresses-grid { grid-template-columns: 1fr; }
+}
+.addresses-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.addresses-map-side__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.addresses-map-side__head .map-instructions {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.addresses-map-side__export {
+  margin-inline-start: auto;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+.addresses-map-wrap {
+  position: relative;
+}
+.addresses-map-wrap .libya-sky-vignette {
+  border-radius: var(--radius);
+}
+.addresses-map-side .map-canvas {
+  min-height: 320px;
+  height: 46vh;
+  max-height: 560px;
+}
+
+.addresses-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 1rem;
+  justify-content: center;
+}
+.addresses-pagination__nav.is-disabled,
+.addresses-pagination__nav[aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.addresses-pagination__num {
+  display: inline-block;
+  min-width: 2rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--text);
+  font-size: 0.92rem;
+  text-align: center;
+  background: transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.addresses-pagination__num:hover {
+  background: #1a222e;
+  border-color: #3d4a5c;
+}
+.addresses-pagination__num.is-current {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #e0eaff;
+  font-weight: 700;
+}
+.addresses-pagination__dots {
+  padding: 0 0.25rem;
+  color: var(--muted);
+}
+
+/* =====================================================================
+ * SECTION 10 — Phase 1+ extensions: users, profile, admin geo, full edit,
+ *              dashboard charts, address show, auth hints.
+ * --------------------------------------------------------------------- */
+
+.auth-card__hint {
+  margin: 1rem 0 0;
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.user-form-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.4rem 1.4rem 1.2rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  max-width: 560px;
+  margin: 0 auto;
+}
+.user-form-card__title { margin: 0 0 1rem; font-size: 1.2rem; }
+.user-form-card .form-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.users-page .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  font-size: 0.93rem;
+}
+.users-page .data-table th,
+.users-page .data-table td {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  vertical-align: middle;
+}
+.users-page .data-table thead th {
+  background: #1a2230;
+  font-weight: 600;
+  color: var(--muted);
+}
+.users-page .cell-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.users-page .inline-form { display: inline; }
+
+/* Admin geo manager */
+.admin-geo-page { padding-bottom: 2rem; }
+.admin-geo-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+}
+.admin-geo-tab {
+  padding: 0.5rem 0.95rem;
+  border-radius: 8px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.admin-geo-tab.is-active {
+  background: rgba(59, 130, 246, 0.2);
+  color: #e0eaff;
+  border-color: rgba(59, 130, 246, 0.45);
+}
+.admin-geo-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .admin-geo-grid { grid-template-columns: 1fr; }
+}
+.admin-geo-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.1rem 0.9rem;
+}
+.admin-geo-card__title { margin: 0 0 0.75rem; font-size: 1.05rem; }
+.admin-geo-card .data-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.admin-geo-card .data-table th,
+.admin-geo-card .data-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.admin-geo-card .data-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.admin-geo-upload-card {
+  background: var(--card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+.admin-geo-upload-card__title { margin: 0 0 0.5rem; font-size: 1rem; }
+
+/* Address show (read-only) */
+.address-show-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 960px) {
+  .address-show-page { grid-template-columns: 1fr; }
+}
+.address-show-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.2rem;
+}
+.address-show-card dl {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.45rem 1rem;
+  margin: 0;
+}
+.address-show-card dt { color: var(--muted); }
+.address-show-card dd { margin: 0; word-break: break-word; }
+.address-show-card .postal-pill {
+  display: inline-block;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(59,130,246,0.18);
+  border: 1px solid rgba(59,130,246,0.4);
+  font-family: ui-monospace, Menlo, monospace;
+  letter-spacing: 0.05em;
+}
+.address-show-map {
+  min-height: 320px;
+  height: 50vh;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+/* Full edit (Phase 4) reuses workbench but loosens locked styling. */
+.addr-form--full-edit .field-help { font-size: 0.78rem; color: var(--muted); }
+
+/* Dashboard widgets (Phase 5) */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.2rem;
+}
+.dash-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.95rem 1rem;
+  text-align: center;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+}
+.dash-card__value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #e0eaff;
+}
+.dash-card__label { color: var(--muted); margin-top: 0.25rem; font-size: 0.9rem; }
+.dash-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+.dash-chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+}
+.dash-chart-card__title {
+  margin: 0 0 0.65rem;
+  font-size: 1rem;
+  color: var(--text);
+}
+.dash-chart-card__body {
+  flex: 1;
+  min-height: 220px;
+  position: relative;
+}
+.dash-chart-card canvas {
+  max-width: 100%;
+  height: 100% !important;
+}
+
+.dash-recent {
+  margin-top: 1.25rem;
+}
+.dash-recent__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+.dash-recent .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.dash-recent .data-table th,
+.dash-recent .data-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.dash-recent .data-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Phase 3 — unified map (drill-down) */
+.map-resolve-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  margin-top: 0.6rem;
+  font-size: 0.95rem;
+}
+.map-resolve-card dl {
+  display: grid;
+  grid-template-columns: 7rem 1fr;
+  gap: 0.35rem 0.75rem;
+  margin: 0;
+}
+.map-resolve-card dt { color: var(--muted); }
+.map-resolve-card dd { margin: 0; }
+.map-resolve-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 0.4rem;
+}
+.map-resolve-card__title {
+  margin: 0;
+  font-size: 1rem;
+}
+.map-drill-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: end;
+  margin-bottom: 0.6rem;
+}
+.map-drill-bar select,
+.map-drill-bar label {
+  font-size: 0.9rem;
+}
+.map-drill-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--muted);
+}
+.map-drill-bar .form-input { padding: 0.45rem 0.6rem; min-width: 160px; }
+.map-drill-bar .explore-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
+}
+
+.form-input--inline {
+  display: inline-block;
+  width: auto;
+  max-width: 220px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.85rem;
+  margin-inline-end: 0.25rem;
+}
+.admin-geo-inline-edit {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-inline-end: 0.4rem;
+}
+.dashboard-page .intro { margin-bottom: 1rem; }
+.address-show-map-wrap { display: flex; flex-direction: column; gap: 0.4rem; }
+
+

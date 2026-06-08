@@ -1,0 +1,30 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# PHP / runtime
+vendor/
+composer.lock
+.env
+.env.*
+!.env.example
+
+# Local database dumps & generated tiles (large / machine-specific)
+data/tiles/
+*.mbtiles
+database/*.sql
+!database/.gitkeep
+
+# Logs & temp
+*.log
+tmp/
+cache/
+
+# Windows batch local overrides (if you add secrets there)
+run-server.local.bat
