@@ -27,6 +27,15 @@ $beJsVer = is_file($projectRoot . '/' . $beJs) ? (string) filemtime($projectRoot
 $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/index.php'));
 $lpApiBase = rtrim($scriptDir, '/') . '/index.php?r=';
 $extraFooter .= '<script>window.LP_API_BASE=' . json_encode($lpApiBase, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) . ';</script>';
+$provinceColors = $provinceColors ?? \App\Models\Boundary::provinceColors();
+$pcJson = json_encode($provinceColors, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+$extraFooter .= '<script type="application/json" id="province-colors-data">' . $pcJson . '</script>';
+$mapRegions = $mapRegions ?? [];
+$regionsJson = json_encode($mapRegions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+$extraFooter .= '<script type="application/json" id="postal-map-regions-data">' . $regionsJson . '</script>';
+$pcJs = 'js/map/province_colors.js';
+$pcJsVer = is_file($projectRoot . '/' . $pcJs) ? (string) filemtime($projectRoot . '/' . $pcJs) : (string) time();
+$extraFooter .= '<script src="' . htmlspecialchars($pcJs . '?v=' . $pcJsVer, ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($beJs . '?v=' . $beJsVer, ENT_QUOTES, 'UTF-8') . '" defer></script>';
 
 require dirname(__DIR__, 2) . '/partials/head.php';
@@ -97,6 +106,12 @@ $roleAr = match ($userRole) {
 
                     <label class="form-label" for="be-prop-color">اللون</label>
                     <input class="form-input" type="color" id="be-prop-color" value="#0ea5e9" disabled>
+
+                    <div class="be-layer-toggles" aria-label="طبقات الخريطة">
+                        <label><input type="checkbox" id="be-layer-states" checked> حدود الولايات</label>
+                        <label><input type="checkbox" id="be-layer-regions" checked> حدود الشعبيات</label>
+                        <label><input type="checkbox" id="be-layer-labels" checked> تسميات B1–F22</label>
+                    </div>
 
                     <dl class="be-stats">
                         <dt>الرؤوس</dt><dd id="be-stat-vertices" class="mono">—</dd>

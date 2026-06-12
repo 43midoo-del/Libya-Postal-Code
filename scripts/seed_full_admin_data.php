@@ -210,9 +210,9 @@ foreach ($shabiyatList as $sh) {
     /* boundary */
     if (isset($featureByCode[$code])) {
         $color = match (strtoupper(substr($code, 0, 1))) {
-            'B' => '#fcd34d',
-            'T' => '#86efac',
-            'F' => '#fda4af',
+            'B' => '#ef4444',
+            'T' => '#22c55e',
+            'F' => '#cbd5e1',
             default => '#cbd5e1',
         };
         $geojson = json_encode($featureByCode[$code]['geometry'] ?? null, JSON_UNESCAPED_UNICODE);

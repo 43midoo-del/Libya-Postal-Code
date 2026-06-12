@@ -730,6 +730,81 @@ button.map-base-btn--ghost:hover {
   margin-bottom: 0.52rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.15);
 }
+.addr-sidebar__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+.addr-sidebar__header .panel--mgr__title {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.add-address__sidebar-shell {
+  min-width: 0;
+  overflow: hidden;
+  align-self: stretch;
+}
+.add-address-workbench--sidebar-collapsed .add-address__sidebar {
+  transform: translateX(108%);
+  opacity: 0;
+  pointer-events: none;
+}
+.addr-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.addr-sidebar-toggle:hover {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: #64748b;
+  color: #f8fafc;
+}
+.addr-sidebar-toggle:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+.addr-sidebar-toggle--hide {
+  width: 22px;
+  height: 22px;
+  margin-top: 0.05rem;
+}
+.addr-sidebar-toggle--show {
+  display: none;
+  position: absolute;
+  inset-inline-start: clamp(8px, 1.8vw, 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1500;
+  width: 26px;
+  height: 48px;
+  border-radius: 8px 0 0 8px;
+  border-inline-end: none;
+  background: linear-gradient(165deg, #1e4976 0%, #15365b 50%, #0c1e33 100%);
+  box-shadow: -2px 0 12px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+.add-address-workbench--sidebar-collapsed .addr-sidebar-toggle--show {
+  display: inline-flex;
+  pointer-events: auto;
+}
+.addr-sidebar-toggle--show:hover {
+  background: linear-gradient(165deg, #2563a8 0%, #1a4a7a 50%, #0f2844 100%);
+  border-color: #38bdf8;
+  color: #f0f9ff;
+}
+.addr-sidebar-toggle--show:active {
+  transform: translateY(-50%) scale(0.97);
+}
 
 .addr-form-card {
   padding: 0.5rem;
@@ -780,8 +855,10 @@ button.map-base-btn--ghost:hover {
 
 /* —— لوحة العنوان (dir=rtl على الحاوية): إدارة العنوان يمينًا | خريطة وسطًا | حدود القطعة يسارًا —— */
 .add-address-workbench {
+  --sidebar-col: minmax(200px, min(30vw, 360px));
+  --gis-toolbox-col: minmax(130px, 12vw);
   display: grid;
-  grid-template-columns: minmax(200px, min(30vw, 360px)) minmax(260px, 1fr) minmax(130px, 12vw);
+  grid-template-columns: var(--sidebar-col) minmax(260px, 1fr) var(--gis-toolbox-col);
   gap: 0;
   min-height: min(68vh, 780px);
   width: 100%;
@@ -792,8 +869,10 @@ button.map-base-btn--ghost:hover {
   border-radius: 0;
   overflow: hidden;
   box-shadow: none;
+  transition: grid-template-columns 0.3s ease;
 }
 .add-address-workbench.add-address-workbench--modern {
+  position: relative;
   gap: clamp(8px, 1.8vw, 14px);
   padding: clamp(8px, 1.8vw, 14px);
   background: radial-gradient(80% 50% at 50% -10%, rgba(56, 189, 248, 0.08), transparent),
@@ -802,6 +881,20 @@ button.map-base-btn--ghost:hover {
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   overflow: visible;
   border-radius: 0;
+}
+.add-address-workbench--sidebar-collapsed {
+  --sidebar-col: 0px;
+}
+.add-address-workbench--sidebar-collapsed .add-address__sidebar-shell {
+  margin-inline-start: calc(-1 * clamp(8px, 1.8vw, 14px));
+  pointer-events: none;
+}
+.add-address-workbench--gis-toolbox-collapsed {
+  --gis-toolbox-col: 0px;
+}
+.add-address-workbench--gis-toolbox-collapsed .gis-toolbox-shell {
+  margin-inline-end: calc(-1 * clamp(8px, 1.8vw, 14px));
+  pointer-events: none;
 }
 
 @media (max-width: 720px) {
@@ -813,16 +906,25 @@ button.map-base-btn--ghost:hover {
     order: 1;
     min-height: 360px;
   }
-  .add-address-workbench .add-address__sidebar {
+  .add-address-workbench .add-address__sidebar-shell {
     order: 2;
   }
   .add-address-workbench .gis-toolbox {
     order: 3;
     border-top: 1px solid var(--border);
   }
+  .addr-sidebar-toggle--show,
+  .addr-sidebar-toggle--hide {
+    display: none !important;
+  }
 }
 
 /* —— Left: GIS toolbox (light panel like reference) —— */
+.gis-toolbox-shell {
+  min-width: 0;
+  overflow: hidden;
+  align-self: stretch;
+}
 .gis-toolbox {
   padding: 0.85rem 0.75rem 1rem;
   background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
@@ -831,6 +933,81 @@ button.map-base-btn--ghost:hover {
   border-inline-end: none;
   overflow-y: auto;
   max-height: min(88vh, 860px);
+  transition: transform 0.3s ease, opacity 0.25s ease;
+}
+.add-address-workbench--gis-toolbox-collapsed .gis-toolbox {
+  transform: translateX(-108%);
+  opacity: 0;
+  pointer-events: none;
+}
+.gis-toolbox__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.25rem;
+  margin-bottom: 0.35rem;
+}
+.gis-toolbox__header .gis-toolbox__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.gis-toolbox-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(51, 65, 85, 0.22);
+  background: #fff;
+  color: #334155;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.gis-toolbox-toggle:hover {
+  background: #e2e8f0;
+  border-color: #64748b;
+  color: #0f172a;
+}
+.gis-toolbox-toggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+.gis-toolbox-toggle--hide {
+  width: 22px;
+  height: 22px;
+  margin-top: 0.05rem;
+}
+.gis-toolbox-toggle--show {
+  display: none;
+  position: absolute;
+  inset-inline-end: clamp(8px, 1.8vw, 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1500;
+  width: 26px;
+  height: 48px;
+  border-radius: 0 8px 8px 0;
+  border-inline-start: none;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+  box-shadow: 2px 0 12px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+.add-address-workbench--gis-toolbox-collapsed .gis-toolbox-toggle--show {
+  display: inline-flex;
+  pointer-events: auto;
+}
+.gis-toolbox-toggle--show:hover {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+}
+.gis-toolbox-toggle--show:active {
+  transform: translateY(-50%) scale(0.97);
+}
+.map-canvas-wrap--mgr {
+  position: relative;
 }
 .gis-toolbox.gis-toolbox--modern {
   border-radius: 14px;
@@ -951,8 +1128,11 @@ button.map-base-btn--ghost:hover {
   padding: 0.45rem 0.5rem 0.55rem;
   max-height: min(88vh, 860px);
 }
+.gis-toolbox--compact .gis-toolbox__header {
+  margin-bottom: 0.28rem;
+}
 .gis-toolbox--compact .gis-toolbox__title {
-  margin: 0 0 0.35rem;
+  margin: 0;
   font-size: 0.8rem;
   padding-bottom: 0.2rem;
 }
@@ -1041,6 +1221,10 @@ button.map-base-btn--ghost:hover {
 .gis-toolbox--readonly {
   pointer-events: none;
   opacity: 0.52;
+}
+.gis-toolbox--readonly .gis-toolbox-toggle--hide {
+  pointer-events: auto;
+  opacity: 1;
 }
 .add-address__map-stack {
   display: flex;
@@ -1147,7 +1331,7 @@ button.map-base-btn--ghost:hover {
 /* طبقات الخريطة: أسفل اليسار الفعلي (left/bottom) حتى لا يعكس dir/inset-inline الموضع في RTL */
 .map-canvas-wrap--mgr .map-layer-controls-float {
   position: absolute;
-  bottom: 10px;
+  bottom: 5px;
   left: 10px;
   right: auto;
   inset-inline-start: unset;
@@ -1450,12 +1634,102 @@ button.map-base-btn--ghost:hover {
   display: none;
 }
 
+.leaflet-tooltip.shabiya-boundary-label {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  pointer-events: none;
+}
+.leaflet-tooltip.shabiya-boundary-label--area {
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 0.26rem 0.48rem;
+  border-color: rgba(250, 204, 21, 0.65);
+  z-index: 1200 !important;
+}
+.leaflet-tooltip.shabiya-boundary-label--street {
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 0.18rem 0.36rem;
+  opacity: 0.95;
+  z-index: 1100 !important;
+}
+
+.city-place-pin-icon {
+  background: transparent !important;
+  border: none !important;
+}
+.city-place-pin {
+  position: relative;
+  width: 0;
+  height: 0;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.city-place-pin__dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fcd34d;
+  border: 1.5px solid #0c4a6e;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%);
+  transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+}
+.city-place-pin__label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-block;
+  margin: 0;
+  padding: 0.2rem 0.42rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  text-align: center;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.city-place-pin--top .city-place-pin__label {
+  transform: translate(-50%, calc(-100% - 7px));
+}
+.city-place-pin--bottom .city-place-pin__label {
+  transform: translate(-50%, 7px);
+}
+.city-place-pin--right .city-place-pin__label {
+  transform: translate(7px, -50%);
+}
+.city-place-pin--left .city-place-pin__label {
+  transform: translate(calc(-100% - 7px), -50%);
+}
+.city-place-pin.is-hover .city-place-pin__dot,
+.city-place-pin:hover .city-place-pin__dot {
+  transform: scale(1.35);
+  background: #d97706;
+  border-color: #082f49;
+}
+.city-place-pin.is-hover .city-place-pin__label,
+.city-place-pin:hover .city-place-pin__label {
+  border-color: rgba(250, 204, 21, 0.75);
+}
+
 /* —— عمود حقول الإدارة (بحسب dir=rtl يظهر جهة يمين الشاشة) —— */
 .add-address__sidebar {
   padding: 0.9rem 1rem 1.15rem;
   background: linear-gradient(165deg, #1e4976 0%, #15365b 35%, #0c1e33 100%);
   overflow-y: auto;
   max-height: min(90vh, 920px);
+  transition: transform 0.3s ease, opacity 0.25s ease;
 }
 .panel--mgr--compact {
   padding: 0.42rem 0.48rem 0.55rem;

@@ -58,7 +58,8 @@ $centerLat = $center[0];
 $centerLng = $center[1];
 $zoom = (int) $mapCfg['default_zoom'];
 $minZoom = (int) $mapCfg['min_zoom'];
-$maxZoomSat = (int) $mapCfg['max_zoom'];
+$maxZoom = (int) $mapCfg['max_zoom'];
+$maxZoomSat = (int) ($mapCfg['max_zoom_satellite'] ?? 17);
 $mapSatelliteDefault = true;
 $initialLat = $editRow !== null ? (string) $editRow['latitude'] : '';
 $initialLng = $editRow !== null ? (string) $editRow['longitude'] : '';
@@ -123,9 +124,13 @@ $shabiyatJson = json_encode($libya['shabiyat'], JSON_UNESCAPED_UNICODE | JSON_HE
 $extraFooter .= '<script type="application/json" id="libya-shabiyat-data">' . $shabiyatJson . '</script>';
 $shabiyaPlacesJson = json_encode($shabiyaCityPlaces, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 $extraFooter .= '<script type="application/json" id="shabiya-city-places-data">' . $shabiyaPlacesJson . '</script>';
+$provinceColors = $provinceColors ?? ['B' => '#ef4444', 'T' => '#22c55e', 'F' => '#cbd5e1'];
+$pcJson = json_encode($provinceColors, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+$extraFooter .= '<script type="application/json" id="province-colors-data">' . $pcJson . '</script>';
 $extraFooter .= '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>';
 $extraFooter .= '<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" crossorigin="anonymous"></script>';
 $extraFooter .= '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>';
+$extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/province_colors.js'), ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/core.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/labels.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/shabiyat.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
@@ -183,9 +188,19 @@ $csrf = \App\Csrf::getToken();
         </header>
 
         <div class="add-address-workbench add-address-workbench--modern add-address-workbench--rtl-layout" dir="rtl">
+            <button type="button" id="btn-addr-sidebar-show" class="addr-sidebar-toggle addr-sidebar-toggle--show" aria-label="إظهار إدارة العنوان" title="إظهار إدارة العنوان" aria-hidden="true" tabindex="-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+
+            <div class="add-address__sidebar-shell" id="addr-sidebar-shell">
             <aside class="add-address__sidebar panel--mgr panel--mgr--compact" dir="rtl" aria-labelledby="postal-form-title">
                 <div class="addr-sidebar__masthead">
-                    <h2 id="postal-form-title" class="panel--mgr__title">إدارة العنوان</h2>
+                    <div class="addr-sidebar__header">
+                        <h2 id="postal-form-title" class="panel--mgr__title">إدارة العنوان</h2>
+                        <button type="button" id="btn-addr-sidebar-hide" class="addr-sidebar-toggle addr-sidebar-toggle--hide" aria-label="إخفاء اللوحة" title="إخفاء">
+                            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                        </button>
+                    </div>
                     <p class="panel--mgr__hint muted" dir="ltr"><span class="mono postal-format-hint">B 2-1-S 9</span></p>
                 </div>
 
@@ -325,7 +340,8 @@ $csrf = \App\Csrf::getToken();
                 <p class="muted panel--mgr__footnote">الموقع والكود البريدي ثابتان لهذا السجل.</p>
                 <?php endif; ?>
             </aside>
-        
+            </div>
+
             <section class="add-address__map-stack add-address__map-stack--modern" dir="ltr" aria-label="خريطة ليبيا">
                 <div
                     id="map-root"
@@ -338,7 +354,8 @@ $csrf = \App\Csrf::getToken();
                     data-center-lng="<?= htmlspecialchars((string) $centerLng, ENT_QUOTES, 'UTF-8') ?>"
                     data-zoom="<?= (int) $zoom ?>"
                     data-min-zoom="<?= (int) $minZoom ?>"
-                    data-max-zoom="<?= (int) $maxZoomSat ?>"
+                    data-max-zoom="<?= (int) $maxZoom ?>"
+                    data-max-zoom-sat="<?= (int) $maxZoomSat ?>"
                     data-mask-url="data/libya-mask-inner-ring.geojson"
                     data-shabiyat-url="data/libya-shabiyat.geojson"
                     data-skip-neighbor-boundaries="1"
@@ -378,9 +395,18 @@ $csrf = \App\Csrf::getToken();
                 </div>
             </section>
 
-            
+            <button type="button" id="btn-gis-toolbox-show" class="gis-toolbox-toggle gis-toolbox-toggle--show" aria-label="إظهار أدوات رسم حدود القطعة" title="إظهار حدود القطعة" aria-hidden="true" tabindex="-1">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+
+            <div class="gis-toolbox-shell" id="gis-toolbox-shell">
             <aside class="gis-toolbox gis-toolbox--modern gis-toolbox--compact gis-toolbox--parcel<?= $editRow !== null ? ' gis-toolbox--readonly' : '' ?>" dir="rtl" aria-label="رسم حدود القطعة">
-                <h3 class="gis-toolbox__title">حدود القطعة على الخريطة</h3>
+                <div class="gis-toolbox__header">
+                    <h3 class="gis-toolbox__title">حدود القطعة على الخريطة</h3>
+                    <button type="button" id="btn-gis-toolbox-hide" class="gis-toolbox-toggle gis-toolbox-toggle--hide" aria-label="إخفاء اللوحة" title="إخفاء">
+                        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+                    </button>
+                </div>
                 <fieldset class="gis-fieldset gis-fieldset--minimal">
                     <legend class="gis-legend-sm">لون</legend>
                     <div class="gis-palette gis-palette--mini" id="gis-palette">
@@ -407,6 +433,7 @@ $csrf = \App\Csrf::getToken();
                     <label><input type="checkbox" id="layer-labels" checked> تسميات B1–F22</label>
                 </div>
             </aside>
+            </div>
 
             
             </div>

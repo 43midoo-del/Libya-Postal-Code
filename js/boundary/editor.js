@@ -167,7 +167,28 @@
 
   var tabs = document.querySelectorAll('.be-tab');
 
-  var PROVINCE_COLORS = { B: '#fcd34d', T: '#86efac', F: '#fda4af' };
+  var PROVINCE_COLORS = { B: '#ef4444', T: '#22c55e', F: '#cbd5e1' };
+
+  function syncProvinceColorsFromGlobal() {
+    if (window.ProvinceColors && typeof window.ProvinceColors.getAll === 'function') {
+      var all = window.ProvinceColors.getAll();
+      if (all.B) { PROVINCE_COLORS.B = all.B; }
+      if (all.T) { PROVINCE_COLORS.T = all.T; }
+      if (all.F) { PROVINCE_COLORS.F = all.F; }
+    }
+  }
+
+  syncProvinceColorsFromGlobal();
+
+  window.addEventListener('province-colors-changed', function () {
+    syncProvinceColorsFromGlobal();
+    loadOverview();
+    if (state.currentLayer && state.entityId) {
+      var c = defaultColorForProps({ province: state.level === 'state' ? (codeIn && codeIn.value) : '', color: colorIn ? colorIn.value : '' });
+      if (colorIn) { colorIn.value = c; }
+      state.currentLayer.setStyle({ color: c, fillColor: c, fillOpacity: state.currentIsGrid ? 0.24 : 0.2 });
+    }
+  });
   var PROTECTED_LEVELS = { state: true, region: true };
   var GRID_LEVELS = { city: true, area: true };
   var ADD_CHILD_LEVELS = { area: true, street: true };
@@ -187,13 +208,70 @@
     drillParentId: null,
     parentContext: null,
     placeMode: null,
+    addNewMode: false,
     childView: { level: null, parentId: null },
     currentLayer: null,
     currentIsGrid: false,
+    geometryDirty: false,
     overviewLayer: L.layerGroup().addTo(map),
+    statesOverviewLayer: L.layerGroup().addTo(map),
+    regionsOverviewLayer: L.layerGroup().addTo(map),
+    labelsLayer: L.layerGroup().addTo(map),
     pickLayer: L.layerGroup().addTo(map),
     siblingsLayer: L.layerGroup().addTo(map)
   };
+
+  function loadPostalRegions() {
+    var el = document.getElementById('postal-map-regions-data');
+    if (!el) { return []; }
+    try {
+      var arr = JSON.parse(el.textContent || '[]');
+      return Array.isArray(arr) ? arr : [];
+    } catch (eReg) {
+      return [];
+    }
+  }
+
+  var postalRegions = loadPostalRegions();
+
+  function installBoundaryLabels() {
+    state.labelsLayer.clearLayers();
+    for (var j = 0; j < postalRegions.length; j++) {
+      var lb = postalRegions[j];
+      var code = lb.code || (lb.province && lb.n ? lb.province + lb.n : '');
+      if (typeof lb.lat !== 'number' || typeof lb.lng !== 'number' || !code) {
+        continue;
+      }
+      L.marker([lb.lat, lb.lng], {
+        interactive: false,
+        icon: L.divIcon({
+          className: 'postal-map-label',
+          html: '<span>' + String(code).replace(/</g, '') + '</span>',
+          iconSize: [44, 24],
+          iconAnchor: [22, 12]
+        })
+      }).addTo(state.labelsLayer);
+    }
+  }
+
+  function syncLayerToggle(name, layer, checkboxId) {
+    var cb = document.getElementById(checkboxId);
+    if (!cb || !layer) { return; }
+    var apply = function () {
+      if (cb.checked) {
+        if (!map.hasLayer(layer)) { map.addLayer(layer); }
+      } else if (map.hasLayer(layer)) {
+        map.removeLayer(layer);
+      }
+    };
+    cb.addEventListener('change', apply);
+    apply();
+  }
+
+  installBoundaryLabels();
+  syncLayerToggle('states', state.statesOverviewLayer, 'be-layer-states');
+  syncLayerToggle('regions', state.regionsOverviewLayer, 'be-layer-regions');
+  syncLayerToggle('labels', state.labelsLayer, 'be-layer-labels');
 
   function loadDismissedGrids() {
     try {
@@ -269,8 +347,15 @@
   }
 
   function canSave() {
-    if (!state.currentLayer) { return false; }
-    if (state.entityId) { return true; }
+    if (state.entityId && (state.level === 'state' || state.level === 'region')) {
+      return true;
+    }
+    if (!state.currentLayer) {
+      return false;
+    }
+    if (state.entityId) {
+      return true;
+    }
     return canCreateOnSave();
   }
 
@@ -279,8 +364,102 @@
     saveBtn.disabled = !canSave();
   }
 
-  function provinceColor(prov) {
+  function provinceColor(prov, savedColor) {
+    if (savedColor) {
+      return String(savedColor);
+    }
+    if (window.ProvinceColors && typeof window.ProvinceColors.getColor === 'function') {
+      return window.ProvinceColors.getColor(prov);
+    }
     return PROVINCE_COLORS[String(prov || '').toUpperCase()] || '#94a3b8';
+  }
+
+  function provinceHoverFill(prov) {
+    return provinceColor(prov);
+  }
+
+  var beBorderPulseTimers = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  var beBorderPulseTick = {};
+
+  function beStopBorderPulse(layer) {
+    if (!layer) { return; }
+    if (beBorderPulseTimers) {
+      var t = beBorderPulseTimers.get(layer);
+      if (t) {
+        clearInterval(t);
+        beBorderPulseTimers.delete(layer);
+      }
+      return;
+    }
+    if (layer._leaflet_id && beBorderPulseTick[layer._leaflet_id]) {
+      clearInterval(beBorderPulseTick[layer._leaflet_id]);
+      delete beBorderPulseTick[layer._leaflet_id];
+    }
+  }
+
+  function beStartBorderPulse(layer, hoverStyle) {
+    beStopBorderPulse(layer);
+    var pulseOn = true;
+    var heavy = Object.assign({}, hoverStyle, {
+      weight: (hoverStyle.weight || 2) + 1.4,
+      opacity: 1
+    });
+    var light = Object.assign({}, hoverStyle, {
+      weight: hoverStyle.weight || 2,
+      opacity: 0.65
+    });
+    var tick = function () {
+      if (!layer._map) {
+        beStopBorderPulse(layer);
+        return;
+      }
+      pulseOn = !pulseOn;
+      layer.setStyle(pulseOn ? heavy : light);
+    };
+    tick();
+    var id = setInterval(tick, 400);
+    if (beBorderPulseTimers) {
+      beBorderPulseTimers.set(layer, id);
+    } else {
+      beBorderPulseTick[layer._leaflet_id] = id;
+    }
+  }
+
+  function stateHoverStyle(prov, savedColor) {
+    var c = provinceColor(prov, savedColor);
+    return {
+      color: c,
+      weight: 4.2,
+      opacity: 1,
+      fillColor: provinceHoverFill(prov),
+      fillOpacity: 0.34,
+      dashArray: null
+    };
+  }
+
+  function regionHoverStyle(prov, savedColor) {
+    var c = provinceColor(prov, savedColor);
+    return {
+      color: c,
+      weight: 2.8,
+      opacity: 1,
+      fillColor: provinceHoverFill(prov),
+      fillOpacity: 0.42,
+      dashArray: null
+    };
+  }
+
+  function attachPolygonHover(layer, baseStyleFn, hoverStyleFn) {
+    if (!layer || typeof layer.on !== 'function') { return; }
+    var baseStyle = baseStyleFn();
+    layer.on('mouseover', function () {
+      beStartBorderPulse(layer, hoverStyleFn());
+      if (layer.bringToFront) { layer.bringToFront(); }
+    });
+    layer.on('mouseout', function () {
+      beStopBorderPulse(layer);
+      layer.setStyle(baseStyle);
+    });
   }
 
   function activateTab(level) {
@@ -322,7 +501,12 @@
     var parentLabel = level === 'area' ? 'المدينة' : 'الحي';
     var childLabel = level === 'area' ? 'حي' : 'شارع';
     if (addChildBtn) {
-      addChildBtn.textContent = '+ إضافة ' + childLabel;
+      var nm = (nameIn && nameIn.value || '').trim();
+      if (state.addNewMode && nm && !state.placeMode) {
+        addChildBtn.textContent = 'تحديد على الخريطة';
+      } else {
+        addChildBtn.textContent = '+ إضافة ' + childLabel;
+      }
       addChildBtn.disabled = !state.drillParentId || !!state.placeMode;
     }
     if (addChildCtx) {
@@ -335,13 +519,68 @@
       }
     }
     if (addChildCancel) {
-      addChildCancel.hidden = !state.placeMode;
+      addChildCancel.hidden = !(state.placeMode || state.addNewMode || state.entityId || state.currentLayer);
     }
-    if (show && (state.placeMode || !state.entityId)) {
+    if (show && (state.placeMode || state.addNewMode || !state.entityId)) {
       if (nameIn) { nameIn.disabled = false; }
       if (codeIn) { codeIn.disabled = false; }
       if (colorIn) { colorIn.disabled = false; }
     }
+  }
+
+  function prepareNewChild() {
+    if (!state.drillParentId) {
+      var parentLabel = state.level === 'area' ? 'المدينة' : 'الحي';
+      setStatus('اختر ' + parentLabel + ' أولاً (من الخريطة أو القائمة).', true);
+      return;
+    }
+    var childLabel = state.level === 'area' ? 'حي' : 'شارع';
+    var name = (nameIn && nameIn.value || '').trim();
+    if (state.addNewMode && name) {
+      startPlaceMode();
+      return;
+    }
+    cancelPlaceMode(false);
+    state.addNewMode = true;
+    state.entityId = 0;
+    state.entityName = '';
+    if (entitySel) { entitySel.value = ''; }
+    removeCurrentLayer();
+    if (nameIn) {
+      nameIn.value = '';
+      nameIn.disabled = false;
+      nameIn.focus();
+    }
+    if (codeIn) {
+      codeIn.value = '';
+      codeIn.disabled = false;
+    }
+    if (colorIn) {
+      colorIn.value = '#0ea5e9';
+      colorIn.disabled = false;
+    }
+    updateSaveButton();
+    syncDeleteButton();
+    syncAddChildUi();
+    setStatus(
+      'أدخل بيانات ' + childLabel + ' الجديد وارسم المضلع ثم احفظ، أو أدخل الاسم واضغط «تحديد على الخريطة» لتوليد شبكة تلقائية.',
+      false
+    );
+  }
+
+  function cancelChildSelection() {
+    cancelPlaceMode(false);
+    state.addNewMode = false;
+    state.entityId = 0;
+    state.entityName = '';
+    if (entitySel) { entitySel.value = ''; }
+    removeCurrentLayer();
+    setEntityProps(null);
+    updateSaveButton();
+    syncDeleteButton();
+    syncAddChildUi();
+    var childLabel = state.level === 'area' ? 'حي' : 'شارع';
+    setStatus('أُلغي التحديد — اختر ' + childLabel + 'اً من القائمة أو اضغط «+ إضافة ' + childLabel + '».', false);
   }
 
   function startPlaceMode() {
@@ -405,6 +644,7 @@
         }
         state.entityId = Number(data.id);
         state.entityName = pm.name;
+        state.addNewMode = false;
         state.currentIsGrid = false;
         if (nameIn) { nameIn.value = pm.name; }
         if (codeIn && pm.code) { codeIn.value = pm.code; }
@@ -435,17 +675,18 @@
       });
   }
 
-  /** Hide country/shabiya overview when editing cities/areas inside a parent. */
   function updateOverviewVisibility() {
     var deep = (state.level === 'city' || state.level === 'area' || state.level === 'street')
       && !!state.drillParentId;
-    if (deep) {
-      if (map.hasLayer(state.overviewLayer)) {
-        map.removeLayer(state.overviewLayer);
+    var layers = [state.statesOverviewLayer, state.regionsOverviewLayer];
+    layers.forEach(function (layer) {
+      if (!layer) { return; }
+      if (deep) {
+        if (map.hasLayer(layer)) { map.removeLayer(layer); }
+      } else if (!map.hasLayer(layer)) {
+        map.addLayer(layer);
       }
-    } else if (!map.hasLayer(state.overviewLayer)) {
-      map.addLayer(state.overviewLayer);
-    }
+    });
   }
 
   function layerSpan(layer) {
@@ -522,8 +763,26 @@
       .catch(function () { return false; });
   }
 
+  function defaultColorForProps(props) {
+    if (props && props.color) {
+      return String(props.color);
+    }
+    var prov = props && (props.province || props.code);
+    if (prov) {
+      if (window.ProvinceColors && typeof window.ProvinceColors.getColor === 'function') {
+        return window.ProvinceColors.getColor(prov);
+      }
+      var letter = String(prov).charAt(0).toUpperCase();
+      if (PROVINCE_COLORS[letter]) {
+        return PROVINCE_COLORS[letter];
+      }
+    }
+    return colorIn ? (colorIn.value || '#0ea5e9') : '#0ea5e9';
+  }
+
   function selectEntity(level, entityId, props, layer, fromDropdown) {
     activateTab(level);
+    state.addNewMode = false;
     state.entityId = entityId;
     state.entityName = props && props.name ? String(props.name) : '';
     if (entitySel) {
@@ -532,9 +791,10 @@
     setEntityProps({
       name: state.entityName,
       code: props && props.code ? String(props.code) : '',
-      color: (props && props.color) || colorIn.value || '#0ea5e9'
+      color: defaultColorForProps(props)
     });
     syncDeleteButton();
+    syncAddChildUi();
     loadCurrentBoundary();
     if (!fromDropdown && layer) {
       flyToLayer(layer);
@@ -628,41 +888,64 @@
           return;
         }
         state.overviewLayer.clearLayers();
+        state.statesOverviewLayer.clearLayers();
+        state.regionsOverviewLayer.clearLayers();
         if (!map.hasLayer(state.overviewLayer)) {
           map.addLayer(state.overviewLayer);
+        }
+
+        if (data.colors && window.ProvinceColors) {
+          window.ProvinceColors.setColors(data.colors, true);
+          syncProvinceColorsFromGlobal();
         }
 
         if (data.states && data.states.features) {
           L.geoJSON(data.states, {
             style: function (f) {
-              var p = (f.properties && f.properties.province) || '';
-              var c = provinceColor(p);
+              var p = f.properties || {};
+              var prov = p.province || '';
+              var c = provinceColor(prov, p.color);
               return {
                 color: c,
                 weight: 3,
-                opacity: 0.85,
+                opacity: 0.9,
                 fillColor: c,
-                fillOpacity: 0.06,
+                fillOpacity: 0.2,
                 dashArray: '6,4',
                 interactive: true
               };
             },
             onEachFeature: function (f, layer) {
               var p = f.properties || {};
+              var prov = p.province || '';
+              var c = provinceColor(prov, p.color);
               layer.bindTooltip((p.code || '') + ' — ' + (p.name || ''), { sticky: true, direction: 'center', className: 'shabiya-tooltip' });
+              attachPolygonHover(layer, function () {
+                return {
+                  color: c,
+                  weight: 3,
+                  opacity: 0.85,
+                  fillColor: c,
+                  fillOpacity: 0.2,
+                  dashArray: '6,4'
+                };
+              }, function () {
+                return stateHoverStyle(prov, p.color);
+              });
               layer.on('click', function (ev) {
                 if (L.DomEvent) { L.DomEvent.stopPropagation(ev); }
                 selectEntity('state', Number(p.entity_id), p, layer, false);
               });
             }
-          }).addTo(state.overviewLayer);
+          }).addTo(state.statesOverviewLayer);
         }
 
         if (data.regions && data.regions.features) {
           L.geoJSON(data.regions, {
             style: function (f) {
-              var p = (f.properties && f.properties.province) || '';
-              var c = provinceColor(p);
+              var p = f.properties || {};
+              var prov = p.province || '';
+              var c = provinceColor(prov, p.color);
               return {
                 color: c,
                 weight: 1.4,
@@ -674,14 +957,27 @@
             },
             onEachFeature: function (f, layer) {
               var p = f.properties || {};
+              var prov = p.province || '';
+              var c = provinceColor(prov, p.color);
               var tip = (p.code ? p.code + ' — ' : '') + (p.name || '');
               layer.bindTooltip(tip, { sticky: true, direction: 'top', className: 'shabiya-tooltip' });
+              attachPolygonHover(layer, function () {
+                return {
+                  color: c,
+                  weight: 1.4,
+                  opacity: 0.9,
+                  fillColor: c,
+                  fillOpacity: 0.14
+                };
+              }, function () {
+                return regionHoverStyle(prov, p.color);
+              });
               layer.on('click', function (ev) {
                 if (L.DomEvent) { L.DomEvent.stopPropagation(ev); }
                 onMapFeatureClick(p, layer);
               });
             }
-          }).addTo(state.overviewLayer);
+          }).addTo(state.regionsOverviewLayer);
         }
       });
   }
@@ -815,6 +1111,7 @@
       if (r.has_boundary) { label = '● ' + label; }
       op.textContent = label;
       op.dataset.code = r.code || '';
+      if (r.color) { op.dataset.color = String(r.color); }
       op.dataset.has = r.has_boundary ? '1' : '0';
       op.dataset.level = state.level;
       if (r.parent_id) { op.dataset.parentId = String(r.parent_id); }
@@ -870,6 +1167,26 @@
         fillOpacity: 0.92
       });
       cm.bindTooltip(p.name || '', { sticky: true, direction: 'top' });
+      var cmBase = {
+        radius: selectedId && Number(p.entity_id) === Number(selectedId) ? 8 : 6,
+        color: '#0c4a6e',
+        weight: 2,
+        fillColor: '#fcd34d',
+        fillOpacity: 0.92
+      };
+      cm.on('mouseover', function () {
+        cm.setStyle({
+          radius: 9,
+          weight: 2.8,
+          color: '#082f49',
+          fillColor: '#d97706',
+          fillOpacity: 1
+        });
+        if (cm.bringToFront) { cm.bringToFront(); }
+      });
+      cm.on('mouseout', function () {
+        cm.setStyle(cmBase);
+      });
       cm.on('click', function (ev) {
         if (L.DomEvent) { L.DomEvent.stopPropagation(ev); }
         onMapFeatureClick(Object.assign({ level: level }, p), cm);
@@ -877,8 +1194,29 @@
       cm.addTo(group);
       return;
     }
+    var isSelected = !!(selectedId && Number(p.entity_id) === Number(selectedId));
+    var basePolyStyle = featureStyle(p, level, isSelected);
     var lyr = L.geoJSON(f, {
-      style: featureStyle(p, level, selectedId && Number(p.entity_id) === Number(selectedId))
+      style: basePolyStyle,
+      onEachFeature: function (_feat, subLayer) {
+        if (isSelected) { return; }
+        var hoverStyle = (function () {
+          var color = basePolyStyle.fillColor || basePolyStyle.color || '#38bdf8';
+          return {
+            color: color,
+            weight: (basePolyStyle.weight || 1.2) + 1.6,
+            opacity: 1,
+            fillColor: color,
+            fillOpacity: Math.min(0.52, (basePolyStyle.fillOpacity || 0.06) + 0.34),
+            dashArray: null
+          };
+        })();
+        attachPolygonHover(subLayer, function () {
+          return Object.assign({}, basePolyStyle);
+        }, function () {
+          return Object.assign({}, hoverStyle);
+        });
+      }
     });
     lyr.on('click', function (ev) {
       if (L.DomEvent) { L.DomEvent.stopPropagation(ev); }
@@ -1037,14 +1375,13 @@
     if (op && op.dataset.level && op.dataset.level !== state.level) { return; }
     var id = parseInt(entitySel.value, 10);
     if (!id) {
-      setEntityProps(null);
-      removeCurrentLayer();
-      setStatus('اختر كياناً من القائمة لعرض حدوده وتحريرها.', false);
+      cancelChildSelection();
       return;
     }
     if (applyParentFromOption(op)) {
       loadPickLayer(state.level, state.drillParentId);
     }
+    state.addNewMode = false;
     state.entityId = id;
     state.entityName = op
       ? op.textContent.replace(/^[●\s]+/, '').replace(/\s*\([^)]*\)\s*$/, '').trim()
@@ -1052,9 +1389,15 @@
     setEntityProps({
       name: state.entityName,
       code: op ? (op.dataset.code || '') : '',
-      color: '#0ea5e9'
+      color: defaultColorForProps({
+        province: op ? (op.dataset.code || '').charAt(0) : '',
+        code: op ? (op.dataset.code || '') : '',
+        color: op && op.dataset.color ? op.dataset.color : ''
+      })
     });
     syncDeleteButton();
+    syncAddChildUi();
+    updateSaveButton();
     var level = state.level;
     var parentId = state.drillParentId;
     loadCurrentBoundary().then(function (hadBoundary) {
@@ -1079,10 +1422,6 @@
         return zoomToEntityLocation(level, id);
       });
     });
-    var childLevel = DRILL_CHILD[state.level];
-    if (childLevel && id) {
-      revealChildren(childLevel, id, null);
-    }
   });
   }
 
@@ -1124,7 +1463,9 @@
         }
         if (match.properties) {
           if (match.properties.code && codeIn) { codeIn.value = String(match.properties.code); }
-          if (match.properties.color && colorIn) { colorIn.value = String(match.properties.color); }
+        }
+        if (colorIn) {
+          colorIn.value = defaultColorForProps(match.properties || {});
         }
         installCurrentLayer(match);
         updateSaveButton();
@@ -1143,7 +1484,7 @@
     var props = feature.properties || {};
     var isGrid = !!props.is_grid;
     state.currentIsGrid = isGrid;
-    var color = props.color || '#0ea5e9';
+    var color = defaultColorForProps(props);
     if (colorIn) { colorIn.value = color; }
     var lyr = L.geoJSON(feature, {
       style: {
@@ -1161,8 +1502,12 @@
     first.pm.enable({ allowSelfIntersection: false });
     first.addTo(map);
     state.currentLayer = first;
+    state.geometryDirty = false;
     flyToLayer(first, state.level);
-    first.on('pm:edit pm:cut pm:rotateend', refreshStats);
+    first.on('pm:edit pm:cut pm:rotateend pm:dragend', function () {
+      state.geometryDirty = true;
+      refreshStats();
+    });
     refreshStats();
     if (isGrid) {
       setStatus('شبكة مبدئية لـ "' + state.entityName + '" — عدّل المضلع ثم احفظ، أو احذف الشبكة لرسم جديد.', false);
@@ -1178,6 +1523,7 @@
       state.currentLayer = null;
     }
     state.currentIsGrid = false;
+    state.geometryDirty = false;
     refreshStats();
     syncActionButtons();
     updateSaveButton();
@@ -1190,6 +1536,7 @@
     }
     state.currentLayer = e.layer;
     state.currentIsGrid = false;
+    state.geometryDirty = true;
     var color = colorIn.value || '#0ea5e9';
     if (e.layer.setStyle) {
       e.layer.setStyle({ color: color, fillColor: color, fillOpacity: 0.2, weight: 2.5 });
@@ -1213,7 +1560,7 @@
    * ============================================================ */
   function setEntityProps(props) {
     if (!props) {
-      var allowNew = !!ADD_CHILD_LEVELS[state.level];
+      var allowNew = !!ADD_CHILD_LEVELS[state.level] && !!state.addNewMode;
       nameIn.value = '';
       nameIn.disabled = !allowNew;
       codeIn.value = '';
@@ -1232,16 +1579,17 @@
     codeIn.value = props.code || '';
     codeIn.disabled = false;
     colorIn.disabled = false;
-    if (props.color) { colorIn.value = props.color; }
+    colorIn.value = defaultColorForProps(props);
     updateSaveButton();
   }
 
   function postBoundarySave(geom) {
+    var metaOnly = (state.level === 'state' || state.level === 'region') && !state.geometryDirty;
     var fd = new FormData();
     fd.append('csrf_token', csrf);
     fd.append('level', state.level);
     fd.append('entity_id', String(state.entityId));
-    fd.append('geojson', JSON.stringify(geom));
+    fd.append('geojson', metaOnly ? '' : (geom ? JSON.stringify(geom) : ''));
     fd.append('name', nameIn.value || '');
     fd.append('code', codeIn.value || '');
     fd.append('color', colorIn.value || '');
@@ -1279,7 +1627,13 @@
 
   function afterBoundarySaved(data) {
     setStatus((data && data.message) || 'حُفِظَ.', false);
+    if (data && data.colors && window.ProvinceColors) {
+      window.ProvinceColors.setColors(data.colors, false);
+      syncProvinceColorsFromGlobal();
+    }
+    state.addNewMode = false;
     state.currentIsGrid = false;
+    state.geometryDirty = false;
     undismissGrid(state.level, state.entityId);
     syncDeleteButton();
     loadOverview();
@@ -1295,12 +1649,14 @@
     if (state.currentLayer && state.currentLayer.setStyle) {
       state.currentLayer.setStyle({ color: colorIn.value, fillColor: colorIn.value });
     }
+    updateSaveButton();
   });
   }
 
   if (nameIn) {
     nameIn.addEventListener('input', function () {
       updateSaveButton();
+      syncAddChildUi();
       if (canCreateOnSave()) {
         setStatus('اضغط «حفظ» لإنشاء «' + (nameIn.value || '').trim() + '» وحفظ الحدود.', false);
       }
@@ -1310,21 +1666,33 @@
   if (saveBtn) {
   saveBtn.addEventListener('click', function () {
     if (!canSave()) {
-      if (!state.currentLayer) {
+      if (!state.entityId) {
+        setStatus('اختر كياناً من القائمة أولاً.', true);
+      } else if (!state.currentLayer && state.level !== 'state' && state.level !== 'region') {
         setStatus('ارسم مضلعاً على الخريطة قبل الحفظ.', true);
-      } else if (!state.entityId) {
-        setStatus('أدخل الاسم وتأكد من اختيار الكيان الأب (المدينة/الحي).', true);
       } else {
-        setStatus('اختر كياناً وارسم مضلعاً قبل الحفظ.', true);
+        setStatus('اختر كياناً قبل الحفظ.', true);
       }
       return;
     }
-    var gj = state.currentLayer.toGeoJSON();
-    var geom = (gj && gj.geometry) ? gj.geometry : null;
-    if (!geom) { setStatus('لا توجد هندسة صالحة للحفظ.', true); return; }
+    var geom = null;
+    if (state.currentLayer) {
+      var gj = state.currentLayer.toGeoJSON();
+      geom = (gj && gj.geometry) ? gj.geometry : null;
+    }
+    if (!geom && state.level !== 'state' && state.level !== 'region') {
+      setStatus('لا توجد هندسة صالحة للحفظ.', true);
+      return;
+    }
 
     saveBtn.disabled = true;
-    setStatus(state.entityId ? 'جارٍ الحفظ…' : 'جارٍ إنشاء الكيان وحفظ الحدود…', false);
+    var metaOnly = (state.level === 'state' || state.level === 'region') && !state.geometryDirty;
+    setStatus(
+      metaOnly
+        ? 'جارٍ حفظ اللون…'
+        : (state.entityId ? 'جارٍ الحفظ…' : 'جارٍ إنشاء الكيان وحفظ الحدود…'),
+      false
+    );
     var savePromise = state.entityId
       ? postBoundarySave(geom)
       : createEntityThenSave(geom);
@@ -1404,12 +1772,12 @@
 
   if (addChildBtn) {
     addChildBtn.addEventListener('click', function () {
-      startPlaceMode();
+      prepareNewChild();
     });
   }
   if (addChildCancel) {
     addChildCancel.addEventListener('click', function () {
-      cancelPlaceMode(true);
+      cancelChildSelection();
     });
   }
 

@@ -9,6 +9,8 @@ $appShellClass = $appShellClass ?? '';
 $bodyClass = $bodyClass ?? '';
 $swJsPath = dirname(__DIR__, 2) . '/public/sw.js';
 $swJsVer = is_file($swJsPath) ? (string) filemtime($swJsPath) : '3';
+$appCssPath = dirname(__DIR__, 2) . '/css/app.css';
+$appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -20,7 +22,7 @@ $swJsVer = is_file($swJsPath) ? (string) filemtime($swJsPath) : '3';
     <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?> — <?= htmlspecialchars($appName, ENT_QUOTES, 'UTF-8') ?></title>
     <link rel="manifest" href="public/manifest.webmanifest">
     <link rel="icon" type="image/svg+xml" href="public/icon.svg">
-    <link rel="stylesheet" href="css/app.css">
+    <link rel="stylesheet" href="css/app.css?v=<?= htmlspecialchars($appCssVer, ENT_QUOTES, 'UTF-8') ?>">
     <?php
     if (!empty($extraHead) && is_string($extraHead)) {
         echo $extraHead; // e.g. Leaflet CSS (trusted from controller/views only)

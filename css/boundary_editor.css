@@ -212,8 +212,44 @@ body.boundary-editor-body > .app-footer { display: none; }
 }
 .be-status.is-err { color: #fda4af; }
 
+.be-layer-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 0.82rem;
+}
+.be-layer-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  color: #cbd5e1;
+}
+
 /* Geoman draw controls in RTL — keep them LTR-oriented for icon clarity */
 .leaflet-pm-toolbar { direction: ltr; }
+
+.postal-map-label {
+  background: transparent;
+  border: none;
+}
+.postal-map-label span {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #0f172a;
+  background: rgba(253, 224, 71, 0.92);
+  border: 1px solid rgba(15, 23, 42, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}
 
 /* Responsive: collapse sidebar to top half on narrow screens */
 @media (max-width: 900px) {

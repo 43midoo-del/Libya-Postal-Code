@@ -62,6 +62,7 @@ final class AddressController extends BaseController
             'mapLabels'         => $mapLabels,
             'shabiyaCityPlaces' => $shabiyaCityPlaces,
             'appShellClass'     => 'app-shell--wide app-shell--mgr',
+            'provinceColors'    => \App\Models\Boundary::provinceColors(),
         ]);
     }
 

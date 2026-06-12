@@ -21,6 +21,8 @@ $neLat = $b['north'];
 $neLng = $b['east'];
 $initialLat = (string) $row['latitude'];
 $initialLng = (string) $row['longitude'];
+$maxZoom = (int) $mapCfg['max_zoom'];
+$maxZoomSat = (int) ($mapCfg['max_zoom_satellite'] ?? 17);
 
 $shabiyatJson = json_encode($libya['shabiyat'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 $extraHead = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">';
@@ -149,7 +151,8 @@ $curShabiya = (string) ($row['shabiya'] ?? '');
             data-center-lng="<?= htmlspecialchars($initialLng, ENT_QUOTES, 'UTF-8') ?>"
             data-zoom="14"
             data-min-zoom="<?= (int) $mapCfg['min_zoom'] ?>"
-            data-max-zoom="<?= (int) $mapCfg['max_zoom'] ?>"
+            data-max-zoom="<?= (int) $maxZoom ?>"
+            data-max-zoom-sat="<?= (int) $maxZoomSat ?>"
             data-mask-url="data/libya-mask-inner-ring.geojson"
             data-shabiyat-url="data/libya-shabiyat.geojson"
             data-skip-neighbor-boundaries="1"

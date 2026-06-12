@@ -128,6 +128,149 @@ final class Boundary
         $st->execute(['lvl' => $level, 'id' => $entityId]);
     }
 
+    /** @return array<string, string> Letter B/T/F → #hex */
+    public static function defaultProvinceColors(): array
+    {
+        $path = dirname(__DIR__) . '/config/province_colors.php';
+        if (!is_file($path)) {
+            return ['B' => '#ef4444', 'T' => '#22c55e', 'F' => '#cbd5e1'];
+        }
+        $cfg = require $path;
+
+        return is_array($cfg) ? $cfg : ['B' => '#ef4444', 'T' => '#22c55e', 'F' => '#cbd5e1'];
+    }
+
+    public static function normalizeColor(?string $color): ?string
+    {
+        if ($color === null) {
+            return null;
+        }
+        $color = trim($color);
+        if ($color === '' || !preg_match('/^#?[0-9A-Fa-f]{3,8}$/', $color)) {
+            return null;
+        }
+        if ($color[0] !== '#') {
+            $color = '#' . $color;
+        }
+
+        return strtolower($color);
+    }
+
+    /** @return array<string, string> */
+    public static function provinceColors(): array
+    {
+        $out = self::defaultProvinceColors();
+        try {
+            $pdo = Database::getInstance()->getPdo();
+            $rows = $pdo->query('SELECT code, color FROM states ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as $row) {
+                $letter = strtoupper(trim((string) ($row['code'] ?? '')));
+                $c = self::normalizeColor(isset($row['color']) ? (string) $row['color'] : null);
+                if ($letter !== '' && $c !== null) {
+                    $out[$letter] = $c;
+                }
+            }
+        } catch (\Throwable $e) {
+            // Column may not exist yet — defaults only.
+        }
+
+        return $out;
+    }
+
+    /** Persist wilayah color and propagate to all shabiyat boundaries in that state. */
+    public static function setProvinceColor(int $stateId, string $color): void
+    {
+        $color = self::normalizeColor($color);
+        if ($color === null || $stateId < 1) {
+            return;
+        }
+        $pdo = Database::getInstance()->getPdo();
+        $pdo->prepare('UPDATE states SET color = :c WHERE id = :id')
+            ->execute(['c' => $color, 'id' => $stateId]);
+        $pdo->prepare('UPDATE boundaries SET color = :c WHERE level = "state" AND entity_id = :id')
+            ->execute(['c' => $color, 'id' => $stateId]);
+        $pdo->prepare(
+            'UPDATE boundaries b
+             INNER JOIN regions r ON b.level = "region" AND b.entity_id = r.id
+             SET b.color = :c
+             WHERE r.state_id = :sid'
+        )->execute(['c' => $color, 'sid' => $stateId]);
+    }
+
+    public static function colorForProvinceLetter(string $letter): string
+    {
+        $letter = strtoupper(trim($letter));
+        $all    = self::provinceColors();
+
+        return $all[$letter] ?? '#94a3b8';
+    }
+
+    /** Persist color (and optional code) without replacing GeoJSON geometry. */
+    public static function saveMeta(
+        string $level,
+        int $entityId,
+        ?string $code,
+        ?string $color,
+        ?int $updatedBy
+    ): void {
+        if (!in_array($level, self::LEVELS, true) || $entityId < 1) {
+            throw new RuntimeException('Boundary level أو معرّف غير صالح.');
+        }
+        $color = self::normalizeColor($color);
+        $code  = $code !== null ? trim($code) : null;
+        if ($code !== null && $code !== '' && !preg_match('/^[A-Za-z0-9]{1,8}$/', $code)) {
+            throw new RuntimeException('الرمز يجب أن يكون 1–8 خانات أبجدرقمية.');
+        }
+        if ($code === '') {
+            $code = null;
+        }
+
+        $pdo = Database::getInstance()->getPdo();
+
+        if ($level === 'state') {
+            if ($color !== null) {
+                self::setProvinceColor($entityId, $color);
+            }
+            $existing = self::find('state', $entityId);
+            if ($existing !== null) {
+                $pdo->prepare(
+                    'UPDATE boundaries
+                     SET color = COALESCE(:color, color),
+                         code  = COALESCE(:code, code),
+                         updated_by = :uid
+                     WHERE level = "state" AND entity_id = :id'
+                )->execute([
+                    'color' => $color,
+                    'code'  => $code,
+                    'uid'   => $updatedBy,
+                    'id'    => $entityId,
+                ]);
+            }
+
+            return;
+        }
+
+        $existing = self::find($level, $entityId);
+        if ($existing === null) {
+            throw new RuntimeException(
+                'لا توجد حدود محفوظة لهذا الكيان — ارسم المضلع ثم احفظ، أو غيّر لون الولاية من تبويب «ولاية».'
+            );
+        }
+        $pdo->prepare(
+            'UPDATE boundaries
+             SET color = COALESCE(:color, color),
+                 code  = COALESCE(:code, code),
+                 updated_by = :uid
+             WHERE level = :lvl AND entity_id = :id'
+        )->execute([
+            'color' => $color,
+            'code'  => $code,
+            'uid'   => $updatedBy,
+            'lvl'   => $level,
+            'id'    => $entityId,
+        ]);
+    }
+
     /**
      * Build a FeatureCollection joining boundaries to their parent entity metadata.
      *

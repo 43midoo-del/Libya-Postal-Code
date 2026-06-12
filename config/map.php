@@ -15,6 +15,8 @@ return [
     ],
     'default_center' => [26.30, 17.18], // ~centroid of libya_bounds (country-wide framing)
     'default_zoom'   => 6,
-    'min_zoom'       => 5,
-    'max_zoom'       => 19,
+    'min_zoom'           => 5,
+    'max_zoom'           => 19,
+    /* Esri World Imagery: آخر مستوى فعلي يختلف حسب المنطقة (غالباً 17 في ليبيا). */
+    'max_zoom_satellite' => 17,
 ];

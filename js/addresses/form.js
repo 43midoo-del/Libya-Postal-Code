@@ -98,10 +98,13 @@
   var contextBarLiveFromMap = !!cfg.isEdit;
   var contextBarWilayahPinned = false;
   var wilayahChangeSuppress = 0;
+  var shabiyaChangeSuppress = 0;
   var currentCityDbId = 0;
 
   function beginWilayahProgrammatic() { wilayahChangeSuppress++; }
   function endWilayahProgrammatic() { wilayahChangeSuppress = Math.max(0, wilayahChangeSuppress - 1); }
+  function beginShabiyaProgrammatic() { shabiyaChangeSuppress++; }
+  function endShabiyaProgrammatic() { shabiyaChangeSuppress = Math.max(0, shabiyaChangeSuppress - 1); }
 
   function clearContextBarValues() {
     if (ctxProvince) { ctxProvince.textContent = ''; }
@@ -169,14 +172,32 @@
     window.AddrMap.flyToEntityLocation(parsed.level, parsed.id);
   }
 
-  function showCityGridOnly() {
-    if (cfg.isEdit || !window.AddrMap || typeof window.AddrMap.showCityBoundaryOnly !== 'function') {
+  function focusMapOnSelectedCity(data, flyTo) {
+    if (cfg.isEdit || !window.AddrMap) {
       return;
     }
-    var regionId = areaIn ? parseInt(areaIn.value, 10) : 0;
-    if (currentCityDbId > 0 && regionId > 0) {
-      window.AddrMap.showCityBoundaryOnly(currentCityDbId, regionId);
+    var cityId = 0;
+    if (data && data.city_id != null) {
+      cityId = parseInt(data.city_id, 10) || 0;
     }
+    if (!cityId && currentCityDbId > 0) {
+      cityId = currentCityDbId;
+    }
+    if (cityId > 0 && typeof window.AddrMap.showCityChildBoundaries === 'function') {
+      window.AddrMap.showCityChildBoundaries(cityId, {
+        flyTo: flyTo !== false,
+        hidePlaceMarkers: true
+      });
+      return;
+    }
+    var cn = cityAreaIn ? String(cityAreaIn.value || '').trim() : '';
+    if (cn && typeof window.AddrMap.flyToLoadedCityPlace === 'function') {
+      window.AddrMap.flyToLoadedCityPlace(cn);
+    }
+  }
+
+  function showCityGridOnly(flyTo) {
+    focusMapOnSelectedCity(null, flyTo);
   }
 
   function showSelectedBlockGrid() {
@@ -185,27 +206,36 @@
     }
     var opt = neighborhoodIn.options[neighborhoodIn.selectedIndex];
     if (!opt || !opt.value) {
-      showCityGridOnly();
+      showCityGridOnly(true);
       return;
     }
-    if (!window.AddrMap || typeof window.AddrMap.showBlockBoundaryOnly !== 'function') {
+    if (!window.AddrMap || currentCityDbId < 1) {
       return;
     }
     var parsed = parseBlockOptionValue(opt.value);
     if (!parsed) {
-      showCityGridOnly();
+      showCityGridOnly(true);
       return;
     }
-    var parentId = 0;
-    if (parsed.level === 'area') {
-      parentId = currentCityDbId;
-    } else if (parsed.level === 'street') {
-      parentId = parseInt(opt.getAttribute('data-area-id') || '0', 10);
+    if (parsed.level === 'area' && typeof window.AddrMap.showAreaWithStreets === 'function') {
+      window.AddrMap.showAreaWithStreets(parsed.id, currentCityDbId, { flyTo: true });
+      return;
     }
-    if (parentId > 0) {
-      window.AddrMap.showBlockBoundaryOnly(parsed.level, parsed.id, parentId);
-    } else {
-      showCityGridOnly();
+    if (parsed.level === 'street' && typeof window.AddrMap.showAreaWithStreets === 'function') {
+      var areaId = parseInt(opt.getAttribute('data-area-id') || '0', 10);
+      if (areaId > 0) {
+        window.AddrMap.showAreaWithStreets(areaId, currentCityDbId, {
+          flyTo: true,
+          highlightStreetId: parsed.id
+        });
+        return;
+      }
+    }
+    if (typeof window.AddrMap.showBlockBoundaryOnly === 'function') {
+      var parentId = parsed.level === 'area' ? currentCityDbId : parseInt(opt.getAttribute('data-area-id') || '0', 10);
+      if (parentId > 0) {
+        window.AddrMap.showBlockBoundaryOnly(parsed.level, parsed.id, parentId);
+      }
     }
   }
 
@@ -282,9 +312,6 @@
     syncSelectedBlockFromSelect();
     if (neighborhoodIn.value) {
       showSelectedBlockGrid();
-      flyToSelectedBlock();
-    } else {
-      showCityGridOnly();
     }
   }
 
@@ -314,12 +341,10 @@
         if (cityIn && data.pc_city != null) { cityIn.value = String(data.pc_city); }
         if (data.options && data.options.length) {
           populateNeighborhoodOptions(data.options, matchLabel);
-        } else {
-          showCityGridOnly();
-          if (data.message) {
-            showMsg(data.message, false);
-          }
+        } else if (data.message) {
+          showMsg(data.message, false);
         }
+        focusMapOnSelectedCity(data, true);
         return data;
       })
       .catch(function () {
@@ -574,6 +599,12 @@
 
   if (shabiyaSel) {
     shabiyaSel.addEventListener('change', function () {
+      if (shabiyaChangeSuppress > 0) {
+        syncAreaFromShabiya();
+        updatePreview();
+        updateContextBar();
+        return;
+      }
       resetCityAreaBranchAndDatalist();
       var pv = shabiyaSel.value ? String(shabiyaSel.value).trim() : '';
       if (!cfg.isEdit && !pv) {
@@ -621,12 +652,8 @@
   if (cityAreaIn) {
     cityAreaIn.addEventListener('input', updateContextBar);
     cityAreaIn.addEventListener('change', function () {
-      var cn = String(cityAreaIn.value || '').trim();
       if (!cfg.isEdit) {
         resetMapForHierarchyChange('city');
-        if (cn && window.AddrMap && typeof window.AddrMap.flyToLoadedCityPlace === 'function') {
-          window.AddrMap.flyToLoadedCityPlace(cn);
-        }
         loadCityBlocksForCurrentCity();
       }
       updateContextBar();
@@ -637,7 +664,6 @@
     neighborhoodIn.addEventListener('change', function () {
       syncSelectedBlockFromSelect();
       showSelectedBlockGrid();
-      flyToSelectedBlock();
       try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eN) {}
     });
   }
@@ -885,29 +911,34 @@
     syncProvinceFromWilayah();
     refillShabiyat();
     if (shabiyaSel) {
-      var matched = false;
-      if (d.place) {
-        var targetName = String(d.place).trim();
-        for (var ji = 0; ji < shabiyaSel.options.length; ji++) {
-          if (shabiyaSel.options[ji].value === targetName) {
-            shabiyaSel.selectedIndex = ji;
-            matched = true;
-            break;
+      beginShabiyaProgrammatic();
+      try {
+        var matched = false;
+        if (d.place) {
+          var targetName = String(d.place).trim();
+          for (var ji = 0; ji < shabiyaSel.options.length; ji++) {
+            if (shabiyaSel.options[ji].value === targetName) {
+              shabiyaSel.selectedIndex = ji;
+              matched = true;
+              break;
+            }
           }
         }
-      }
-      if (!matched && d.area != null) {
-        for (var j = 0; j < shabiyaSel.options.length; j++) {
-          var o2 = shabiyaSel.options[j];
-          var nn2 = shabiyaToN[o2.value];
-          if (Number(nn2) === Number(d.area)) {
-            shabiyaSel.selectedIndex = j;
-            matched = true;
-            break;
+        if (!matched && d.area != null) {
+          for (var j = 0; j < shabiyaSel.options.length; j++) {
+            var o2 = shabiyaSel.options[j];
+            var nn2 = shabiyaToN[o2.value];
+            if (Number(nn2) === Number(d.area)) {
+              shabiyaSel.selectedIndex = j;
+              matched = true;
+              break;
+            }
           }
         }
+        if (!matched && d.place) { shabiyaSel.value = String(d.place).trim(); }
+      } finally {
+        endShabiyaProgrammatic();
       }
-      if (!matched && d.place) { shabiyaSel.value = String(d.place).trim(); }
     }
     syncAreaFromShabiya();
     var pa = document.getElementById('pc_area');
@@ -946,6 +977,34 @@
     updatePreview();
     updateContextBar();
     try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eP) {}
+  });
+
+  window.addEventListener('addr-block-select', function (ev) {
+    if (cfg.isEdit || !ev || !ev.detail) { return; }
+    var d = ev.detail;
+    var level = String(d.level || '');
+    var id = parseInt(d.id, 10) || 0;
+    if (!id || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
+    var wantVal = level + ':' + id;
+    function trySelectBlock() {
+      for (var bi = 0; bi < neighborhoodIn.options.length; bi++) {
+        var oB = neighborhoodIn.options[bi];
+        if (oB.value === wantVal) {
+          neighborhoodIn.selectedIndex = bi;
+          syncSelectedBlockFromSelect();
+          showSelectedBlockGrid();
+          updateContextBar();
+          return true;
+        }
+      }
+      return false;
+    }
+    if (trySelectBlock()) { return; }
+    if (cityAreaIn && cityAreaIn.value) {
+      loadCityBlocksForCurrentCity(d.name ? String(d.name).trim() : '').then(function () {
+        trySelectBlock();
+      });
+    }
   });
 
   window.addEventListener('addr-city-places-updated', function (ev) {
@@ -1004,6 +1063,67 @@
       if (ht) { ht.value = saved.hint; }
     }
   } catch (e4) {}
+
+  var workbench = document.querySelector('.add-address-workbench');
+  if (workbench) {
+    var hideToolboxBtn = document.getElementById('btn-gis-toolbox-hide');
+    var showToolboxBtn = document.getElementById('btn-gis-toolbox-show');
+    var hideSidebarBtn = document.getElementById('btn-addr-sidebar-hide');
+    var showSidebarBtn = document.getElementById('btn-addr-sidebar-show');
+
+    function refreshMapLayout() {
+      window.setTimeout(function () {
+        if (window.MapCore && window.MapCore.map) {
+          window.MapCore.map.invalidateSize(false);
+        }
+      }, 320);
+    }
+
+    function setToolboxCollapsed(collapsed) {
+      workbench.classList.toggle('add-address-workbench--gis-toolbox-collapsed', collapsed);
+      if (hideToolboxBtn) {
+        hideToolboxBtn.hidden = collapsed;
+      }
+      if (showToolboxBtn) {
+        showToolboxBtn.setAttribute('aria-hidden', collapsed ? 'false' : 'true');
+        showToolboxBtn.tabIndex = collapsed ? 0 : -1;
+      }
+      refreshMapLayout();
+    }
+
+    function setSidebarCollapsed(collapsed) {
+      workbench.classList.toggle('add-address-workbench--sidebar-collapsed', collapsed);
+      if (hideSidebarBtn) {
+        hideSidebarBtn.hidden = collapsed;
+      }
+      if (showSidebarBtn) {
+        showSidebarBtn.setAttribute('aria-hidden', collapsed ? 'false' : 'true');
+        showSidebarBtn.tabIndex = collapsed ? 0 : -1;
+      }
+      refreshMapLayout();
+    }
+
+    if (hideToolboxBtn) {
+      hideToolboxBtn.addEventListener('click', function () {
+        setToolboxCollapsed(true);
+      });
+    }
+    if (showToolboxBtn) {
+      showToolboxBtn.addEventListener('click', function () {
+        setToolboxCollapsed(false);
+      });
+    }
+    if (hideSidebarBtn) {
+      hideSidebarBtn.addEventListener('click', function () {
+        setSidebarCollapsed(true);
+      });
+    }
+    if (showSidebarBtn) {
+      showSidebarBtn.addEventListener('click', function () {
+        setSidebarCollapsed(false);
+      });
+    }
+  }
 
   /* Public surface for sibling modules (save.js, edit.js). */
   window.AddressForm = {

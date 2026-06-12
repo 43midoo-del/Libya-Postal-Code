@@ -28,20 +28,49 @@
   var regions = MC.regions || [];
   var borderPulseTimers = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
   var borderPulseTick = {};
+  var PLACE_LABEL_DIRS = ['top', 'right', 'bottom', 'left'];
+  var placeLabelLayoutTimer = null;
 
   function provincePalette(prov) {
+    if (window.ProvinceColors && typeof window.ProvinceColors.palette === 'function') {
+      return window.ProvinceColors.palette(prov);
+    }
     var p = String(prov || '').toUpperCase();
     if (p === 'B') {
-      return { stroke: '#fcd34d', fill: '#ca8a04', strokeHover: '#f59e0b', fillHover: '#92400e' };
+      return { stroke: '#ef4444', fill: '#ef4444', strokeHover: '#ef4444', fillHover: '#ef4444' };
     }
     if (p === 'T') {
-      return { stroke: '#86efac', fill: '#22c55e', strokeHover: '#4ade80', fillHover: '#166534' };
+      return { stroke: '#22c55e', fill: '#22c55e', strokeHover: '#22c55e', fillHover: '#22c55e' };
     }
     if (p === 'F') {
-      return { stroke: '#fda4af', fill: '#f43f5e', strokeHover: '#fb7185', fillHover: '#9f1239' };
+      return { stroke: '#cbd5e1', fill: '#cbd5e1', strokeHover: '#cbd5e1', fillHover: '#cbd5e1' };
     }
     return { stroke: '#e2e8f0', fill: '#94a3b8', strokeHover: '#cbd5e1', fillHover: '#475569' };
   }
+
+  function refreshMapProvinceColors() {
+    if (!state.shabiyatLayer) { return; }
+    state.shabiyatLayer.eachLayer(function (layer) {
+      var feat = layer.feature;
+      var p = feat && feat.properties ? feat.properties : {};
+      if (layer === state.selectedShabiyaLayer) {
+        applyShabiyaSelectedStyle(layer);
+        return;
+      }
+      layer.setStyle(shabiyaStyle(feat));
+    });
+    if (state.cityBoundariesLayer) {
+      state.cityBoundariesLayer.eachLayer(function (layer) {
+        var feat = layer.feature;
+        var p = feat && feat.properties ? feat.properties : {};
+        var base = boundaryFeatureStyle(p, true);
+        layer._addrBoundaryBaseStyle = base;
+        layer.setStyle(base);
+      });
+    }
+  }
+
+  window.addEventListener('province-colors-changed', refreshMapProvinceColors);
 
   function stopBorderPulse(layer) {
     if (!layer) { return; }
@@ -119,19 +148,37 @@
 
   var WILKEY_TO_STATE_ID = { barqa: 2, tripolitania: 1, fezzan: 3 };
 
+  /** Province stroke/fill when boundary row has no saved `color`. */
+  function resolveBoundaryPalette(props) {
+    var p = props || {};
+    var custom = p.color ? String(p.color).trim() : '';
+    if (custom) {
+      return { stroke: custom, fill: custom, custom: true };
+    }
+    var prov = String(p.province || '').trim().toUpperCase();
+    if (!prov && p.code) {
+      prov = String(p.code).charAt(0).toUpperCase();
+    }
+    if (prov) {
+      var pal = provincePalette(prov);
+      return { stroke: pal.stroke, fill: pal.fill, custom: false };
+    }
+    return { stroke: '#94a3b8', fill: '#94a3b8', custom: false };
+  }
+
   /** Match boundary editor palette: use saved `properties.color` when set. */
   function boundaryFeatureStyle(p, emphasis) {
     var props = p || {};
     var isGrid = !!props.is_grid;
-    var custom = props.color ? String(props.color).trim() : '';
+    var pal = resolveBoundaryPalette(props);
     var style;
-    if (custom) {
+    if (pal.custom) {
       style = {
         pane: 'cityBoundPane',
-        color: custom,
+        color: pal.stroke,
         weight: isGrid ? 1.8 : 1.6,
         opacity: 0.92,
-        fillColor: custom,
+        fillColor: pal.fill,
         fillOpacity: isGrid ? 0.2 : 0.15,
         dashArray: isGrid ? '5,4' : null,
         lineJoin: 'round',
@@ -152,12 +199,12 @@
     } else {
       style = {
         pane: 'cityBoundPane',
-        color: '#94a3b8',
-        weight: 1.2,
-        opacity: 0.85,
-        fillColor: '#94a3b8',
-        fillOpacity: 0.06,
-        dashArray: '4,4',
+        color: pal.stroke,
+        weight: 1.4,
+        opacity: 0.9,
+        fillColor: pal.fill,
+        fillOpacity: emphasis ? 0.22 : 0.12,
+        dashArray: null,
         lineJoin: 'round',
         lineCap: 'round'
       };
@@ -166,15 +213,65 @@
       style.weight = (style.weight || 1.2) + 0.8;
       style.opacity = Math.min(1, (style.opacity || 0.85) + 0.08);
       style.fillOpacity = Math.min(0.42, (style.fillOpacity || 0.1) + 0.14);
-      if (!style.dashArray && !custom) {
-        style.dashArray = '5,4';
+      if (!style.dashArray && !pal.custom && !isGrid) {
+        style.dashArray = null;
       }
     }
     return style;
   }
 
-  function boundaryFeatureHoverStyle(base) {
-    var color = (base && (base.fillColor || base.color)) || '#38bdf8';
+  function boundaryFeatureStyleForRender(p, ctx) {
+    var props = p || {};
+    var ctx0 = ctx || {};
+    var eid = ctx0.entityId != null ? Number(ctx0.entityId) : 0;
+    var layerLevel = String(ctx0.layerLevel || '');
+    var emphasizeArea = ctx0.emphasizeEntityId != null ? Number(ctx0.emphasizeEntityId) : 0;
+    var highlightStreet = ctx0.highlightStreetId != null ? Number(ctx0.highlightStreetId) : 0;
+
+    if (layerLevel === 'area' && emphasizeArea > 0) {
+      if (eid === emphasizeArea) {
+        return boundaryFeatureStyle(props, true);
+      }
+      return {
+        pane: 'cityBoundPane',
+        color: '#64748b',
+        weight: 1,
+        opacity: 0.42,
+        fillColor: '#334155',
+        fillOpacity: 0.05,
+        dashArray: '4 6',
+        lineJoin: 'round',
+        lineCap: 'round'
+      };
+    }
+    if (layerLevel === 'street') {
+      var streetEmphasis = highlightStreet > 0 && eid === highlightStreet;
+      var streetStyle = boundaryFeatureStyle(props, streetEmphasis);
+      if (highlightStreet > 0 && eid !== highlightStreet) {
+        streetStyle = Object.assign({}, streetStyle, {
+          opacity: Math.min(streetStyle.opacity || 0.9, 0.58),
+          fillOpacity: Math.min(streetStyle.fillOpacity || 0.12, 0.07),
+          weight: Math.max(1, (streetStyle.weight || 1.4) - 0.35)
+        });
+      }
+      return streetStyle;
+    }
+    return boundaryFeatureStyle(props, !!ctx0.emphasis);
+  }
+
+  function boundaryLabelClass(renderOpts) {
+    var cls = 'shabiya-tooltip shabiya-boundary-label';
+    if (renderOpts && renderOpts.layerLevel === 'area') {
+      cls += ' shabiya-boundary-label--area';
+    } else if (renderOpts && renderOpts.layerLevel === 'street') {
+      cls += ' shabiya-boundary-label--street';
+    }
+    return cls;
+  }
+
+  function boundaryFeatureHoverStyle(base, props) {
+    var pal = resolveBoundaryPalette(props || {});
+    var color = (base && (base.fillColor || base.color)) || pal.fill || pal.stroke;
     return {
       pane: 'cityBoundPane',
       color: color,
@@ -278,7 +375,8 @@
     return out;
   }
 
-  function flyToBoundaryFeatureBounds(features) {
+  function flyToBoundaryFeatureBounds(features, flyOpts) {
+    flyOpts = flyOpts || {};
     if (!map || !features || !features.length) {
       return;
     }
@@ -300,12 +398,28 @@
     if (typeof map.stop === 'function') {
       map.stop();
     }
+    var zCap = flyOpts.maxZoom != null ? flyOpts.maxZoom : Math.min(maxZ, 9);
     map.flyToBounds(bb, {
       paddingTopLeft: [56, 92],
       paddingBottomRight: [56, 56],
-      maxZoom: Math.min(maxZ, 9),
-      duration: 0.6
+      maxZoom: zCap,
+      duration: flyOpts.duration != null ? flyOpts.duration : 0.6
     });
+  }
+
+  function shabiyaWilayahFocusStyle(prov) {
+    var pal = provincePalette(prov);
+    return {
+      pane: 'shabiyatPane',
+      color: pal.stroke,
+      weight: 1.4,
+      opacity: 0.95,
+      fillColor: pal.fill,
+      fillOpacity: 0.2,
+      dashArray: null,
+      lineJoin: 'round',
+      lineCap: 'round'
+    };
   }
 
   function dimShabiyatOutsideProvince(provLetter) {
@@ -316,7 +430,7 @@
     state.shabiyatLayer.eachLayer(function (layer) {
       var p = (layer.feature && layer.feature.properties) || {};
       if (!want || String(p.province || '').trim() === want) {
-        layer.setStyle(shabiyaDimStyle(p.province));
+        layer.setStyle(shabiyaWilayahFocusStyle(p.province));
         if (layer.bringToFront) {
           layer.bringToFront();
         }
@@ -347,17 +461,39 @@
       { type: 'FeatureCollection', features: features },
       {
         style: function (feature) {
-          return boundaryFeatureStyle(feature && feature.properties, emphasis);
+          var p = (feature && feature.properties) || {};
+          return boundaryFeatureStyleForRender(p, {
+            emphasis: emphasis,
+            emphasizeEntityId: renderOpts.emphasizeEntityId,
+            highlightStreetId: renderOpts.highlightStreetId,
+            layerLevel: renderOpts.layerLevel,
+            entityId: boundaryFeatureEntityId(feature)
+          });
         },
         onEachFeature: function (feature, layer) {
           var p = (feature && feature.properties) || {};
-          var baseStyle = boundaryFeatureStyle(p, emphasis);
+          var eid = boundaryFeatureEntityId(feature);
+          var baseStyle = boundaryFeatureStyleForRender(p, {
+            emphasis: emphasis,
+            emphasizeEntityId: renderOpts.emphasizeEntityId,
+            highlightStreetId: renderOpts.highlightStreetId,
+            layerLevel: renderOpts.layerLevel,
+            entityId: eid
+          });
           layer._addrBoundaryBaseStyle = baseStyle;
           var nm = String(p.name || '').trim();
           if (!nm) { return; }
-          layer.bindTooltip(nm, { sticky: true, direction: 'center', className: 'shabiya-tooltip' });
+          if (renderOpts.permanentLabels) {
+            layer.bindTooltip(nm, {
+              permanent: true,
+              direction: 'top',
+              className: boundaryLabelClass(renderOpts)
+            });
+          } else if (!state.cityPlaceByName[nm]) {
+            layer.bindTooltip(nm, { sticky: true, direction: 'top', className: 'shabiya-tooltip' });
+          }
           layer.on('mouseover', function () {
-            startBorderPulse(layer, boundaryFeatureHoverStyle(baseStyle));
+            startBorderPulse(layer, boundaryFeatureHoverStyle(baseStyle, p));
             if (layer.bringToFront) { layer.bringToFront(); }
           });
           layer.on('mouseout', function () {
@@ -376,6 +512,37 @@
         }
       }
     ).addTo(state.cityBoundariesLayer);
+  }
+
+  function fetchBoundaryFeaturesRaw(level, parentId, gen, opSeq, entityId) {
+    if (!parentId) {
+      return Promise.resolve([]);
+    }
+    var url =
+      'index.php?r=boundary_list&level=' +
+      encodeURIComponent(String(level)) +
+      '&parent_id=' +
+      encodeURIComponent(String(parentId));
+    return fetch(url, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    })
+      .then(function (r) {
+        if (!r.ok) { throw new Error('boundary_list http ' + r.status); }
+        return r.json();
+      })
+      .then(function (fc) {
+        if (opSeq !== cityBoundariesGeneration || gen !== placesLoadGeneration) {
+          return [];
+        }
+        if (!fc || !Array.isArray(fc.features) || !fc.features.length) {
+          return [];
+        }
+        return filterBoundaryFeatures(fc.features, entityId || 0);
+      })
+      .catch(function () {
+        return [];
+      });
   }
 
   function fetchBoundaryList(level, parentId, gen, entityId, onCityClick, fetchOpts) {
@@ -418,7 +585,7 @@
           emphasis: !!fetchOpts.emphasis
         });
         if (fetchOpts.flyTo) {
-          flyToBoundaryFeatureBounds(feats);
+          flyToBoundaryFeatureBounds(feats, fetchOpts.flyOpts || null);
         }
       })
       .catch(function () {});
@@ -454,10 +621,176 @@
       return;
     }
     fetchBoundaryList('city', regionId, placesLoadGeneration, cityId, function (nm, lat0, lng0, ev, entityId) {
-      if (entityId > 0) {
-        showCityBoundaryOnly(entityId, regionId);
+      handleCityBoundaryClick(nm, lat0, lng0, ev, entityId);
+    });
+  }
+
+  function handleBlockBoundaryClick(level, name, entityId, parentId, lat0, lng0, ev) {
+    if (L && L.DomEvent && ev) { L.DomEvent.stopPropagation(ev); }
+    var nameStr = String(name || '').trim();
+    var eid = parseInt(entityId, 10) || 0;
+    var pid = parseInt(parentId, 10) || 0;
+    if (!nameStr || eid < 1) { return; }
+    var lvl = String(level || '');
+    window.dispatchEvent(
+      new CustomEvent('addr-block-select', {
+        detail: {
+          level: lvl,
+          id: eid,
+          name: nameStr,
+          parentId: pid
+        }
+      })
+    );
+    if (lvl === 'street' && pid > 0 && state.focusedCityId > 0) {
+      showAreaWithStreets(pid, state.focusedCityId, { flyTo: true, highlightStreetId: eid });
+      return;
+    }
+    if (MC.flyToEntityLocation) {
+      MC.flyToEntityLocation(lvl, eid);
+    }
+  }
+
+  function handleAreaBoundaryClick(name, entityId, cityId, lat0, lng0, ev) {
+    if (L && L.DomEvent && ev) { L.DomEvent.stopPropagation(ev); }
+    var nameStr = String(name || '').trim();
+    var eid = parseInt(entityId, 10) || 0;
+    var cid = parseInt(cityId, 10) || 0;
+    if (!nameStr || eid < 1 || cid < 1) { return; }
+    window.dispatchEvent(
+      new CustomEvent('addr-block-select', {
+        detail: {
+          level: 'area',
+          id: eid,
+          name: nameStr,
+          parentId: cid
+        }
+      })
+    );
+    showAreaWithStreets(eid, cid, { flyTo: true });
+    MC.syncMarkerCtaReveal();
+  }
+
+  function collectFeaturesByEntityId(features, entityId) {
+    var want = Number(entityId);
+    var out = [];
+    var list = Array.isArray(features) ? features : [];
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (boundaryFeatureEntityId(list[i]) === want) {
+        out.push(list[i]);
       }
-      handleCityBoundaryClick(nm, lat0, lng0, ev);
+    }
+    return out;
+  }
+
+  function showAreaWithStreets(areaId, cityId, opts) {
+    opts = opts || {};
+    var aid = parseInt(areaId, 10) || 0;
+    var cid = parseInt(cityId, 10) || 0;
+    if (aid < 1 || cid < 1 || !state.cityBoundariesLayer) {
+      return Promise.resolve(false);
+    }
+    var gen = placesLoadGeneration;
+    clearCityBoundaries();
+    var opSeq = ++cityBoundariesGeneration;
+    state.focusedCityId = cid;
+    state.focusedAreaId = aid;
+    if (opts.hidePlaceMarkers !== false && state.cityPlacesLayer) {
+      state.cityPlacesLayer.clearLayers();
+    }
+
+    return fetchBoundaryFeaturesRaw('area', cid, gen, opSeq, 0).then(function (areaFeats) {
+      if (opSeq !== cityBoundariesGeneration || gen !== placesLoadGeneration) {
+        return false;
+      }
+      return fetchBoundaryFeaturesRaw('street', aid, gen, opSeq, 0).then(function (streetFeats) {
+        if (opSeq !== cityBoundariesGeneration || gen !== placesLoadGeneration) {
+          return false;
+        }
+        if (streetFeats.length) {
+          renderBoundaryFeatures(
+            streetFeats,
+            function (nm, lat0, lng0, ev, entityId) {
+              handleBlockBoundaryClick('street', nm, entityId, aid, lat0, lng0, ev);
+            },
+            {
+              emphasis: false,
+              permanentLabels: true,
+              layerLevel: 'street',
+              highlightStreetId: opts.highlightStreetId
+            }
+          );
+        }
+        renderBoundaryFeatures(
+          areaFeats,
+          function (nm, lat0, lng0, ev, entityId) {
+            handleAreaBoundaryClick(nm, entityId, cid, lat0, lng0, ev);
+          },
+          {
+            emphasis: false,
+            permanentLabels: true,
+            layerLevel: 'area',
+            emphasizeEntityId: aid
+          }
+        );
+
+        var flyFeats = collectFeaturesByEntityId(areaFeats, aid).concat(streetFeats || []);
+        if (opts.highlightStreetId) {
+          var hi = collectFeaturesByEntityId(streetFeats, opts.highlightStreetId);
+          if (hi.length) {
+            flyFeats = collectFeaturesByEntityId(areaFeats, aid).concat(hi);
+          }
+        }
+        if (opts.flyTo !== false && flyFeats.length) {
+          state.userOverviewLocked = true;
+          flyToBoundaryFeatureBounds(flyFeats, { maxZoom: Math.min(maxZ, opts.highlightStreetId ? 16 : 15) });
+        }
+        return true;
+      });
+    });
+  }
+
+  function showCityChildBoundaries(cityId, opts) {
+    opts = opts || {};
+    var cid = parseInt(cityId, 10) || 0;
+    if (cid < 1 || !state.cityBoundariesLayer) {
+      return Promise.resolve(false);
+    }
+    var gen = placesLoadGeneration;
+    clearCityBoundaries();
+    var opSeq = cityBoundariesGeneration;
+    if (opts.hidePlaceMarkers !== false && state.cityPlacesLayer) {
+      state.cityPlacesLayer.clearLayers();
+    }
+    state.focusedCityId = cid;
+    state.focusedAreaId = null;
+    return fetchBoundaryFeaturesRaw('area', cid, gen, opSeq, 0).then(function (areaFeats) {
+      if (opSeq !== cityBoundariesGeneration || gen !== placesLoadGeneration) {
+        return false;
+      }
+      if (!areaFeats.length) {
+        var regionId0 =
+          state.lastShabiyaDetail && state.lastShabiyaDetail.n != null ? state.lastShabiyaDetail.n : 0;
+        if (regionId0) {
+          fetchBoundaryList('city', regionId0, gen, cid, null);
+        }
+        if (opts.flyTo !== false) {
+          state.userOverviewLocked = true;
+          if (MC.flyToEntityLocation) {
+            MC.flyToEntityLocation('city', cid);
+          }
+        }
+        return regionId0 > 0;
+      }
+      renderBoundaryFeatures(areaFeats, function (nm, lat0, lng0, ev, entityId) {
+        handleAreaBoundaryClick(nm, entityId, cid, lat0, lng0, ev);
+      }, { emphasis: false, permanentLabels: true, layerLevel: 'area' });
+      if (opts.flyTo !== false) {
+        state.userOverviewLocked = true;
+        flyToBoundaryFeatureBounds(areaFeats, { maxZoom: Math.min(maxZ, 14) });
+      }
+      return true;
     });
   }
 
@@ -470,6 +803,8 @@
   }
 
   MC.showCityBoundaryOnly = showCityBoundaryOnly;
+  MC.showCityChildBoundaries = showCityChildBoundaries;
+  MC.showAreaWithStreets = showAreaWithStreets;
   MC.showBlockBoundaryOnly = showBlockBoundaryOnly;
   MC.showWilayahRegionGrids = showWilayahRegionGrids;
 
@@ -506,6 +841,7 @@
       state.selectedShabiyaLayer = null;
       if (!opts.keepShabiyaDetail) {
         state.lastShabiyaDetail = null;
+        state.userOverviewLocked = false;
       }
       resetShabiyatLayerStyles();
     }
@@ -606,20 +942,152 @@
     return Math.min(maxZ, 8);
   }
 
-  function flyToShabiyaFocus(focusBounds, polygonBounds) {
+  function boundsSpanDeg(bb) {
+    if (!bb || !bb.isValid()) {
+      return Infinity;
+    }
+    return Math.max(bb.getNorth() - bb.getSouth(), bb.getEast() - bb.getWest());
+  }
+
+  function collectPlaceLatLngs(placeRows) {
+    var out = [];
+    var i;
+    for (i = 0; i < placeRows.length; i++) {
+      var row = placeRows[i];
+      var plat = Number(row && row.lat);
+      var plng = Number(row && row.lng);
+      if (!row || !row.name || plat !== plat || plng !== plng) {
+        continue;
+      }
+      var ll = L.latLng(plat, plng);
+      if (!bounds.contains(ll)) {
+        continue;
+      }
+      out.push(ll);
+    }
+    return out;
+  }
+
+  function anchorLatLng(placeRows, regionMeta, polygonBounds) {
+    if (regionMeta && typeof regionMeta.lat === 'number' && typeof regionMeta.lng === 'number') {
+      return L.latLng(regionMeta.lat, regionMeta.lng);
+    }
+    var pts = collectPlaceLatLngs(placeRows);
+    if (pts.length) {
+      var la = 0;
+      var ln = 0;
+      var pi;
+      for (pi = 0; pi < pts.length; pi++) {
+        la += pts[pi].lat;
+        ln += pts[pi].lng;
+      }
+      return L.latLng(la / pts.length, ln / pts.length);
+    }
+    if (polygonBounds && polygonBounds.isValid()) {
+      return polygonBounds.getCenter();
+    }
+    return null;
+  }
+
+  function centroidPadBounds(lat, lng, pad) {
+    return L.latLngBounds([lat - pad, lng - pad], [lat + pad, lng + pad]);
+  }
+
+  /** Keep places near the shabiya centre — ignores distant outliers in large polygons. */
+  function computeTrimmedPlaceBounds(placeRows, anchor, maxRadiusDeg) {
+    if (!anchor) {
+      return null;
+    }
+    var pts = collectPlaceLatLngs(placeRows);
+    if (!pts.length) {
+      return null;
+    }
+    var kept = [];
+    var i;
+    for (i = 0; i < pts.length; i++) {
+      var dLat = pts[i].lat - anchor.lat;
+      var dLng = pts[i].lng - anchor.lng;
+      if (Math.sqrt(dLat * dLat + dLng * dLng) <= maxRadiusDeg) {
+        kept.push(pts[i]);
+      }
+    }
+    if (kept.length >= 2) {
+      return L.latLngBounds(kept).pad(0.12);
+    }
+    if (kept.length === 1) {
+      var p0 = kept[0];
+      return L.latLngBounds(
+        [p0.lat - 0.06, p0.lng - 0.06],
+        [p0.lat + 0.06, p0.lng + 0.06]
+      );
+    }
+    return null;
+  }
+
+  function resolveShabiyaFocusBounds(layer, placeRows, regionMeta, polygonBounds) {
+    var polySpan = boundsSpanDeg(polygonBounds);
+    var placeBounds = computeShabiyaFocusBounds(layer, placeRows, regionMeta);
+    var placeSpan = boundsSpanDeg(placeBounds);
+
+    /* Tight urban cluster (Benghazi-style) when places sit inside the polygon. */
+    if (placeBounds && placeBounds.isValid()) {
+      if (!polygonBounds || !polygonBounds.isValid() || placeSpan <= polySpan * 0.95) {
+        if (placeSpan <= 1.0) {
+          return placeBounds;
+        }
+      }
+    }
+
+    var anchor = anchorLatLng(placeRows, regionMeta, polygonBounds);
+
+    /* Large coastal shabiyat (e.g. Derna): zoom to centre + nearby towns, not the full polygon. */
+    if (polySpan > 1.0 && anchor) {
+      var trimmed = computeTrimmedPlaceBounds(placeRows, anchor, 0.42);
+      if (trimmed && trimmed.isValid() && boundsSpanDeg(trimmed) <= 0.95) {
+        return trimmed;
+      }
+      if (regionMeta && typeof regionMeta.lat === 'number' && typeof regionMeta.lng === 'number') {
+        var pad = polySpan > 1.8 ? 0.11 : (polySpan > 1.2 ? 0.14 : 0.18);
+        return centroidPadBounds(regionMeta.lat, regionMeta.lng, pad);
+      }
+    }
+
+    if (placeBounds && placeBounds.isValid()) {
+      return placeBounds;
+    }
+    if (polygonBounds && polygonBounds.isValid()) {
+      return polygonBounds;
+    }
+    return null;
+  }
+
+  function flyToShabiyaFocus(focusBounds) {
     if (!map || !focusBounds || !focusBounds.isValid()) {
       return;
     }
-    if (typeof map.stop === 'function') {
-      map.stop();
+    state.userOverviewLocked = true;
+    var zCap = Math.max(10, maxZoomForFocusBounds(focusBounds));
+    var runFly = function () {
+      if (!map || !focusBounds || !focusBounds.isValid()) {
+        return;
+      }
+      map.invalidateSize(false);
+      if (typeof map.stop === 'function') {
+        map.stop();
+      }
+      map.flyToBounds(focusBounds, {
+        padding: [48, 48],
+        maxZoom: zCap,
+        duration: 0.65
+      });
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(runFly);
+      });
+    } else {
+      setTimeout(runFly, 16);
     }
-    var zCap = maxZoomForFocusBounds(focusBounds);
-    map.flyToBounds(focusBounds, {
-      paddingTopLeft: [56, 92],
-      paddingBottomRight: [56, 56],
-      maxZoom: zCap,
-      duration: 0.6
-    });
   }
 
   function dimUnselectedShabiyat(selectedLayer) {
@@ -645,7 +1113,7 @@
     }
   }
 
-  function handleCityBoundaryClick(name, lat0, lng0, ev) {
+  function handleCityBoundaryClick(name, lat0, lng0, ev, entityId) {
     if (L && L.DomEvent && ev) { L.DomEvent.stopPropagation(ev); }
     var nameStr = String(name || '').trim();
     if (!nameStr) { return; }
@@ -674,10 +1142,15 @@
       return;
     }
     state.selectedPlace = { name: nameStr, lat: lat, lng: lng, type: type0 };
-    MC.flyToPlace(lat, lng, type0);
+    var eid = parseInt(entityId, 10) || 0;
     window.dispatchEvent(
-      new CustomEvent('addr-place-select', { detail: { name: nameStr, lat: lat, lng: lng, type: type0 } })
+      new CustomEvent('addr-place-select', { detail: { name: nameStr, lat: lat, lng: lng, type: type0, cityId: eid > 0 ? eid : 0 } })
     );
+    if (eid > 0) {
+      showCityChildBoundaries(eid, { flyTo: true, hidePlaceMarkers: true });
+    } else {
+      MC.flyToPlace(lat, lng, type0);
+    }
     MC.syncMarkerCtaReveal();
   }
 
@@ -687,11 +1160,7 @@
       return;
     }
     fetchBoundaryList('city', regionId, gen, 0, function (nm, lat0, lng0, ev, entityId) {
-      var shN = state.lastShabiyaDetail && state.lastShabiyaDetail.n != null ? state.lastShabiyaDetail.n : '';
-      if (entityId > 0 && shN !== '' && shN != null) {
-        showCityBoundaryOnly(entityId, shN);
-      }
-      handleCityBoundaryClick(nm, lat0, lng0, ev);
+      handleCityBoundaryClick(nm, lat0, lng0, ev, entityId);
     });
   }
 
@@ -701,34 +1170,132 @@
     try { return new URL(u, window.location.href).toString(); } catch (eU) { return u; }
   }
 
-  function installYellowPlaceCircle(name, lat0, lng0, type0) {
-    var cm = L.circleMarker([lat0, lng0], {
-      pane: 'cityPane',
-      radius: 5,
-      color: '#0c4a6e',
-      weight: 1.5,
-      fillColor: '#fcd34d',
-      fillOpacity: 0.92
+  function escapePlaceLabelHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function labelRectsOverlap(a, b, pad) {
+    var gap = pad == null ? 4 : pad;
+    return !(
+      a.right + gap < b.left ||
+      a.left - gap > b.right ||
+      a.bottom + gap < b.top ||
+      a.top - gap > b.bottom
+    );
+  }
+
+  function applyPlacePinDirection(pinEl, dirIdx) {
+    if (!pinEl) { return; }
+    var dir = PLACE_LABEL_DIRS[((dirIdx % PLACE_LABEL_DIRS.length) + PLACE_LABEL_DIRS.length) % PLACE_LABEL_DIRS.length];
+    pinEl.className = 'city-place-pin city-place-pin--' + dir;
+    pinEl.setAttribute('data-label-dir', dir);
+  }
+
+  function layoutCityPlaceLabels() {
+    if (!state.cityPlacesLayer || !map) { return; }
+    var layers = [];
+    state.cityPlacesLayer.eachLayer(function (layer) {
+      layers.push(layer);
     });
-    cm.bindTooltip(name, { sticky: true, direction: 'top', className: 'shabiya-tooltip' });
+    if (!layers.length) { return; }
+
+    layers.sort(function (a, b) {
+      var al = a.getLatLng ? a.getLatLng() : null;
+      var bl = b.getLatLng ? b.getLatLng() : null;
+      if (!al || !bl) { return 0; }
+      if (al.lat !== bl.lat) { return al.lat < bl.lat ? -1 : 1; }
+      return al.lng < bl.lng ? -1 : (al.lng > bl.lng ? 1 : 0);
+    });
+
+    var placedRects = [];
+    var li;
+    for (li = 0; li < layers.length; li++) {
+      var layer = layers[li];
+      var el = layer.getElement && layer.getElement();
+      if (!el) { continue; }
+      var pin = el.querySelector('.city-place-pin');
+      var label = el.querySelector('.city-place-pin__label');
+      if (!pin || !label) { continue; }
+
+      var seed = layer._addrLabelSeed != null ? layer._addrLabelSeed : li;
+      var chosen = seed % PLACE_LABEL_DIRS.length;
+      var attempt;
+      for (attempt = 0; attempt < PLACE_LABEL_DIRS.length; attempt++) {
+        var dirIdx = (seed + attempt) % PLACE_LABEL_DIRS.length;
+        applyPlacePinDirection(pin, dirIdx);
+        var rect = label.getBoundingClientRect();
+        var overlaps = false;
+        var pi;
+        for (pi = 0; pi < placedRects.length; pi++) {
+          if (labelRectsOverlap(rect, placedRects[pi])) {
+            overlaps = true;
+            break;
+          }
+        }
+        if (!overlaps) {
+          chosen = dirIdx;
+          placedRects.push(rect);
+          break;
+        }
+        if (attempt === PLACE_LABEL_DIRS.length - 1) {
+          placedRects.push(rect);
+        }
+      }
+      layer._addrLabelDirIdx = chosen;
+      applyPlacePinDirection(pin, chosen);
+    }
+  }
+
+  function schedulePlaceLabelLayout() {
+    if (placeLabelLayoutTimer) {
+      clearTimeout(placeLabelLayoutTimer);
+    }
+    placeLabelLayoutTimer = setTimeout(function () {
+      placeLabelLayoutTimer = null;
+      layoutCityPlaceLabels();
+    }, 40);
+  }
+
+  map.on('zoomend moveend', schedulePlaceLabelLayout);
+
+  function installYellowPlaceCircle(name, lat0, lng0, type0, labelSeed) {
+    var safeName = escapePlaceLabelHtml(name);
+    var cm = L.marker([lat0, lng0], {
+      pane: 'cityPane',
+      icon: L.divIcon({
+        className: 'city-place-pin-icon',
+        html:
+          '<div class="city-place-pin city-place-pin--top" data-label-dir="top" title="' +
+          safeName +
+          '">' +
+          '<span class="city-place-pin__dot" aria-hidden="true"></span>' +
+          '<span class="city-place-pin__label">' +
+          safeName +
+          '</span>' +
+          '</div>',
+        iconSize: [0, 0],
+        iconAnchor: [0, 0]
+      })
+    });
+    cm._addrLabelSeed = labelSeed != null ? labelSeed : 0;
     cm.on('mouseover', function () {
-      cm.setStyle({
-        radius: 8,
-        weight: 2.5,
-        color: '#082f49',
-        fillColor: '#d97706',
-        fillOpacity: 1
-      });
+      var el = cm.getElement && cm.getElement();
+      if (el) {
+        var pin = el.querySelector('.city-place-pin');
+        if (pin) { pin.classList.add('is-hover'); }
+      }
       if (cm.bringToFront) { cm.bringToFront(); }
     });
     cm.on('mouseout', function () {
-      cm.setStyle({
-        radius: 5,
-        weight: 1.5,
-        color: '#0c4a6e',
-        fillColor: '#fcd34d',
-        fillOpacity: 0.92
-      });
+      var el = cm.getElement && cm.getElement();
+      if (el) {
+        var pin = el.querySelector('.city-place-pin');
+        if (pin) { pin.classList.remove('is-hover'); }
+      }
     });
     cm.on('click', function (ev) {
       if (L && L.DomEvent) { L.DomEvent.stopPropagation(ev); }
@@ -786,12 +1353,15 @@
       }
       nameSeen[nm] = 1;
       state.cityPlaceByName[nm] = { lat: plat, lng: plng, type: pt };
-      installYellowPlaceCircle(nm, plat, plng, pt);
+      installYellowPlaceCircle(nm, plat, plng, pt, added);
       added++;
     }
     var keys = Object.keys(nameSeen).sort(function (a, bb) {
       return a.localeCompare(bb, 'ar');
     });
+    if (added > 0) {
+      schedulePlaceLabelLayout();
+    }
     return { added: added, names: keys };
   }
 
@@ -892,6 +1462,7 @@
     if (!layer) {
       return false;
     }
+    state.userOverviewLocked = true;
     try {
       window.dispatchEvent(new Event('addr-map-clear-annotations'));
     } catch (eAnn) {}
@@ -919,9 +1490,11 @@
 
     var placeRows = collectLocalPlaceRows(detail.name, detail.code);
     var regionMeta = lookupRegionMeta(detail.code, detail.n);
-    var focusBounds = computeShabiyaFocusBounds(layer, placeRows, regionMeta);
+    var focusBounds = resolveShabiyaFocusBounds(layer, placeRows, regionMeta, polygonBounds);
     if (focusBounds && focusBounds.isValid()) {
-      flyToShabiyaFocus(focusBounds, polygonBounds);
+      flyToShabiyaFocus(focusBounds);
+    } else {
+      state.userOverviewLocked = false;
     }
 
     setShabiyaLayerSelected(layer);
@@ -1048,23 +1621,27 @@
 
               if (L && L.DomEvent) { L.DomEvent.stopPropagation(e); }
 
-              focusShabiyaLayer(layer, p.name || '', p.province || '', p.code || '');
+              var fillDetail = {
+                level: 'shabiya',
+                province: p.province || '',
+                area: p.n,
+                place: p.name || '',
+                code: p.code || ''
+              };
 
               if (readOnly) {
+                focusShabiyaLayer(layer, p.name || '', p.province || '', p.code || '');
                 return;
               }
 
-              window.dispatchEvent(
-                new CustomEvent('addr-map-fill', {
-                  detail: {
-                    level: 'shabiya',
-                    province: p.province || '',
-                    area: p.n,
-                    place: p.name || '',
-                    code: p.code || ''
-                  }
-                })
-              );
+              /* Sync form first, then focus the clicked layer directly (same zoom path as dropdown). */
+              if (window.AddrMap && typeof window.AddrMap.prepareHierarchyChange === 'function') {
+                window.AddrMap.prepareHierarchyChange('shabiya');
+              }
+
+              window.dispatchEvent(new CustomEvent('addr-map-fill', { detail: fillDetail }));
+              focusShabiyaLayer(layer, p.name || '', p.province || '', p.code || '');
+
               window.dispatchEvent(
                 new CustomEvent('addr-shabiya-select', {
                   detail: {

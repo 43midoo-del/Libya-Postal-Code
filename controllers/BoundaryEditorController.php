@@ -50,7 +50,20 @@ final class BoundaryEditorController extends BaseController
             'minZoom'        => (int) $map['min_zoom'],
             'maxZoom'        => (int) $map['max_zoom'],
             'appShellClass'  => 'app-shell--wide',
+            'provinceColors' => Boundary::provinceColors(),
+            'mapRegions'     => require dirname(__DIR__) . '/config/postal_map_regions.php',
         ]);
+    }
+
+    /** GET — current B/T/F boundary colors (all authenticated map users). */
+    public function apiProvinceColors(): void
+    {
+        $this->requireApiAnyRole(['admin', 'employee', 'citizen']);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'ok'     => true,
+            'colors' => Boundary::provinceColors(),
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     /**
@@ -98,6 +111,7 @@ final class BoundaryEditorController extends BaseController
         /** @var array<string, list<list<list<float>>>> $provincePolys */
         $provincePolys = ['B' => [], 'T' => [], 'F' => []];
         $regionFeatures = [];
+        $provinceColors = Boundary::provinceColors();
 
         foreach ($geo['features'] as $feature) {
             if (!is_array($feature)) {
@@ -136,6 +150,7 @@ final class BoundaryEditorController extends BaseController
                     'code'      => (string) ($props['code'] ?? $regionRow['code'] ?? ''),
                     'province'  => $prov,
                     'n'         => $n,
+                    'color'     => $provinceColors[$prov] ?? null,
                 ],
                 'geometry'   => $geom,
             ];
@@ -169,7 +184,7 @@ final class BoundaryEditorController extends BaseController
                     'name'      => (string) $st['name'],
                     'code'      => $letter,
                     'province'  => $letter,
-                    'color'     => $saved['color'] ?? null,
+                    'color'     => $provinceColors[$letter] ?? ($saved['color'] ?? null),
                 ],
                 'geometry'   => $geom,
             ];
@@ -179,6 +194,7 @@ final class BoundaryEditorController extends BaseController
             'ok'      => true,
             'states'  => ['type' => 'FeatureCollection', 'features' => $stateFeatures],
             'regions' => ['type' => 'FeatureCollection', 'features' => $regionFeatures],
+            'colors'  => $provinceColors,
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -212,7 +228,8 @@ final class BoundaryEditorController extends BaseController
         $level = (string) ($_GET['level'] ?? 'region');
         $parentId = isset($_GET['parent_id']) && $_GET['parent_id'] !== '' ? (int) $_GET['parent_id'] : null;
         $fc = Boundary::asFeatureCollection($level, $parentId);
-        if ($level === 'state' && empty($fc['features'])) {
+        /* Always merge all three wilayah polygons — partial DB rows must not hide T/F. */
+        if ($level === 'state') {
             $fc = $this->stateGeoJsonFallback();
         }
         if ($level === 'region' && $parentId !== null) {
@@ -280,6 +297,7 @@ final class BoundaryEditorController extends BaseController
             }
         }
         $features = [];
+        $provinceColors = Boundary::provinceColors();
         foreach (['B', 'T', 'F'] as $letter) {
             $st = $statesByLetter[$letter] ?? null;
             if ($st === null) {
@@ -306,7 +324,7 @@ final class BoundaryEditorController extends BaseController
                     'name'      => (string) $st['name'],
                     'code'      => $letter,
                     'province'  => $letter,
-                    'color'     => $saved['color'] ?? null,
+                    'color'     => $provinceColors[$letter] ?? ($saved['color'] ?? null),
                 ],
                 'geometry'   => $geom,
             ];
@@ -338,6 +356,7 @@ final class BoundaryEditorController extends BaseController
             $st->execute(['id' => $parentId]);
             $stateLetter = strtoupper(trim((string) ($st->fetchColumn() ?: '')));
         }
+        $provinceColors = Boundary::provinceColors();
         $features = [];
         foreach ($raw['features'] as $feature) {
             if (!is_array($feature)) {
@@ -350,6 +369,7 @@ final class BoundaryEditorController extends BaseController
             $n = (int) ($props['n'] ?? 0);
             $regionRow = $regionsByN[$n] ?? null;
             $entityId = $regionRow !== null ? (int) $regionRow['id'] : $n;
+            $prov = strtoupper(trim((string) ($props['province'] ?? '')));
             $features[] = [
                 'type'       => 'Feature',
                 'properties' => [
@@ -357,7 +377,8 @@ final class BoundaryEditorController extends BaseController
                     'level'     => 'region',
                     'name'      => (string) ($regionRow['name'] ?? $props['name'] ?? ''),
                     'code'      => (string) ($props['code'] ?? $regionRow['code'] ?? ''),
-                    'province'  => (string) ($props['province'] ?? ''),
+                    'province'  => $prov,
+                    'color'     => $provinceColors[$prov] ?? null,
                 ],
                 'geometry'   => $feature['geometry'] ?? null,
             ];
@@ -379,6 +400,14 @@ final class BoundaryEditorController extends BaseController
         $props = is_array($gridFeature['properties'] ?? null) ? $gridFeature['properties'] : [];
         if (!empty($savedProps['color'])) {
             $props['color'] = (string) $savedProps['color'];
+        } elseif (!empty($props['province']) || !empty($props['code'])) {
+            $prov = strtoupper(trim((string) ($props['province'] ?? '')));
+            if ($prov === '' && !empty($props['code'])) {
+                $prov = strtoupper(substr((string) $props['code'], 0, 1));
+            }
+            if ($prov !== '') {
+                $props['color'] = Boundary::colorForProvinceLetter($prov);
+            }
         }
         if (!empty($savedProps['code'])) {
             $props['code'] = (string) $savedProps['code'];
@@ -1261,6 +1290,8 @@ final class BoundaryEditorController extends BaseController
                 'id'           => (int) ($r['id'] ?? 0),
                 'name'         => (string) ($r['name'] ?? ''),
                 'code'         => $r['code'] ?? null,
+                'color'        => isset($r['color']) && $r['color'] !== null && $r['color'] !== ''
+                    ? (string) $r['color'] : null,
                 'parent_id'    => isset($r['parent_id']) && $r['parent_id'] !== null && $r['parent_id'] !== ''
                     ? (int) $r['parent_id'] : null,
                 'kind'         => $r['kind'] ?? null,
@@ -1283,7 +1314,7 @@ final class BoundaryEditorController extends BaseController
         try {
             return match ($level) {
                 'state' => $pdo->query(
-                    'SELECT s.id, s.name, s.code, NULL AS parent_id, ' . $bCount('state', 's.id') . '
+                    'SELECT s.id, s.name, s.code, s.color, NULL AS parent_id, ' . $bCount('state', 's.id') . '
                      FROM states s ORDER BY s.id ASC'
                 )->fetchAll(PDO::FETCH_ASSOC) ?: [],
                 'region' => $this->runEntityQuery(
@@ -1393,16 +1424,37 @@ final class BoundaryEditorController extends BaseController
         try {
             $level = (string) ($_POST['level'] ?? '');
             $entityId = (int) ($_POST['entity_id'] ?? 0);
-            $geojson = (string) ($_POST['geojson'] ?? '');
+            $geojson = trim((string) ($_POST['geojson'] ?? ''));
             $code = isset($_POST['code']) ? (string) $_POST['code'] : null;
             $color = isset($_POST['color']) ? (string) $_POST['color'] : null;
             $name = isset($_POST['name']) ? trim((string) $_POST['name']) : null;
+
+            /* Persist wilayah color before geometry — large MultiPolygons may fail to save. */
+            if ($level === 'state' && $entityId > 0 && $color !== null && trim($color) !== '') {
+                Boundary::setProvinceColor($entityId, $color);
+            }
+
+            if ($geojson === '') {
+                Boundary::saveMeta($level, $entityId, $code, $color, SessionAuth::userId());
+                $this->propagateEntityMeta($level, $entityId, $name, $code, $color);
+                echo json_encode([
+                    'ok'      => true,
+                    'message' => 'تم حفظ اللون.',
+                    'colors'  => Boundary::provinceColors(),
+                ], JSON_UNESCAPED_UNICODE);
+
+                return;
+            }
 
             Boundary::save($level, $entityId, $geojson, $code, $color, SessionAuth::userId());
 
             $this->propagateEntityMeta($level, $entityId, $name, $code, $color);
 
-            echo json_encode(['ok' => true, 'message' => 'تم حفظ الحدود.'], JSON_UNESCAPED_UNICODE);
+            echo json_encode([
+                'ok'      => true,
+                'message' => 'تم حفظ الحدود.',
+                'colors'  => Boundary::provinceColors(),
+            ], JSON_UNESCAPED_UNICODE);
         } catch (RuntimeException $e) {
             http_response_code(400);
             echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);

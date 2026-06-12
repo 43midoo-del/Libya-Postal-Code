@@ -73,14 +73,29 @@
 
   var minZ = parseInt(root.dataset.minZoom, 10) || 5;
   var maxZ = parseInt(root.dataset.maxZoom, 10) || 19;
+  var maxZSat = parseInt(root.dataset.maxZoomSat, 10) || 17;
   var readOnly = root.dataset.readOnly === '1';
   var skipNeighborBoundaryTiles = root.dataset.skipNeighborBoundaries === '1';
+
+  var currentBaseKind = root.dataset.satellite === '1' ? 'sat' : 'osm';
+
+  function effectiveMaxZoom() {
+    return currentBaseKind === 'sat' ? maxZSat : maxZ;
+  }
+
+  function applyMapMaxZoomForBase(kind) {
+    var cap = kind === 'sat' ? maxZSat : maxZ;
+    map.setMaxZoom(cap);
+    if (map.getZoom() > cap) {
+      map.setZoom(cap);
+    }
+  }
 
   var map = L.map('map', {
     maxBounds: bounds,
     maxBoundsViscosity: 1.0,
     minZoom: minZ,
-    maxZoom: maxZ
+    maxZoom: effectiveMaxZoom()
   });
 
   var ilat = parseFloat(root.dataset.initialLat || '');
@@ -101,12 +116,19 @@
     cityBoundariesLayer: null,
     cityPlaceByName: {},
     drawMode: 'none',
-    drawClickHandler: null
+    drawClickHandler: null,
+    userOverviewLocked: false
   };
 
   function hasUserAnchoredMapCoords() {
     if (readOnly) {
       return false;
+    }
+    if (state.userOverviewLocked) {
+      return true;
+    }
+    if (state.lastShabiyaDetail && String(state.lastShabiyaDetail.code || state.lastShabiyaDetail.name || '').trim()) {
+      return true;
     }
     if (marker) {
       return true;
@@ -127,17 +149,28 @@
     if (skipAutoOverviewFit && !o.force) {
       return;
     }
+    if (!o.force && hasUserAnchoredMapCoords()) {
+      map.invalidateSize(false);
+      return;
+    }
     map.invalidateSize(false);
     map.fitBounds(bounds, {
       padding: o.padding || [30, 40],
       animate: !!o.animate,
-      maxZoom: maxZ
+      maxZoom: effectiveMaxZoom()
     });
   }
 
-  var tileBaseOpts = {
+  var tileBaseOptsOsm = {
     maxZoom: maxZ,
     maxNativeZoom: 19,
+    bounds: bounds,
+    noWrap: true
+  };
+
+  var tileBaseOptsSat = {
+    maxZoom: maxZSat,
+    maxNativeZoom: maxZSat,
     bounds: bounds,
     noWrap: true
   };
@@ -148,27 +181,26 @@
 
   var osmLayer = L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    Object.assign({ attribution: osmAttribution }, tileBaseOpts)
+    Object.assign({ attribution: osmAttribution }, tileBaseOptsOsm)
   );
   var satLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    Object.assign({ attribution: esriAttribution }, tileBaseOpts)
+    Object.assign({ attribution: esriAttribution }, tileBaseOptsSat)
   );
   /* Offline base layer — backed by the local MBTiles file (Phase 1).
    * When a tile is missing it returns 204 and the SW falls back automatically. */
   var offlineLayer = L.tileLayer(
     'index.php?r=tile&z={z}&x={x}&y={y}',
-    Object.assign({ attribution: 'Libya Postal (offline) / OSM', maxNativeZoom: 18 }, tileBaseOpts)
+    Object.assign({ attribution: 'Libya Postal (offline) / OSM', maxNativeZoom: 18 }, tileBaseOptsOsm)
   );
 
-  var currentBaseKind = root.dataset.satellite === '1' ? 'sat' : 'osm';
   var labelsOverlayWanted = false;
 
   map.createPane('labelsTilesPane');
   map.getPane('labelsTilesPane').style.zIndex = 350;
   map.getPane('labelsTilesPane').style.pointerEvents = 'none';
 
-  var labelsOverlayOpts = Object.assign({}, tileBaseOpts, {
+  var labelsOverlayOpts = Object.assign({}, tileBaseOptsSat, {
     pane: 'labelsTilesPane',
     attribution: esriRefAttribution,
     opacity: 0.95
@@ -266,6 +298,7 @@
       }
     }
     applyLabelsOverlay();
+    applyMapMaxZoomForBase(kind);
     syncBaseLayerUi();
     map.invalidateSize(false);
     if (typeof satLayer.redraw === 'function') {
@@ -332,6 +365,11 @@
     syncBaseLayerUi();
     fitFullLibyaInView({ animate: false });
     var refit = function () {
+      if (hasUserAnchoredMapCoords()) {
+        map.invalidateSize(false);
+        syncBaseLayerUi();
+        return;
+      }
       fitFullLibyaInView({ animate: false });
       syncBaseLayerUi();
     };
@@ -678,6 +716,7 @@
     state.selectedShabiyaLayer = null;
     state.lastShabiyaDetail = null;
     state.selectedPlace = null;
+    state.userOverviewLocked = false;
     if (window.MapCore && typeof window.MapCore.clearCityPlaces === 'function') {
       window.MapCore.clearCityPlaces();
     }
@@ -690,6 +729,9 @@
       return;
     }
     var lv = String(level || '').trim();
+    if (lv === 'wilayah') {
+      state.userOverviewLocked = false;
+    }
     try {
       window.dispatchEvent(new Event('addr-map-clear-annotations'));
     } catch (eHc) {}
@@ -735,6 +777,7 @@
     if (readOnly || !map) {
       return;
     }
+    state.userOverviewLocked = true;
     var prov = WILKEY_TO_PROV_FORM[wk];
     if (!prov) {
       return;
@@ -871,6 +914,116 @@
   }
 
   map.on('zoomend', syncMarkerCtaReveal);
+
+  var mapContainer = map.getContainer();
+  mapContainer.setAttribute('tabindex', '0');
+  mapContainer.addEventListener('mousedown', function () {
+    mapContainer.focus({ preventScroll: true });
+  });
+
+  function isMapKeyboardTypingTarget(node) {
+    if (!node) {
+      return false;
+    }
+    if (node.isContentEditable) {
+      return true;
+    }
+    var tag = (node.tagName || '').toLowerCase();
+    if (tag === 'textarea') {
+      return true;
+    }
+    if (tag === 'input') {
+      var type = (node.type || 'text').toLowerCase();
+      return (
+        type === 'text' ||
+        type === 'search' ||
+        type === 'email' ||
+        type === 'tel' ||
+        type === 'url' ||
+        type === 'password' ||
+        type === 'number'
+      );
+    }
+    return false;
+  }
+
+  function shouldBlockMapKeyboardShortcut(e) {
+    var active = document.activeElement;
+    if (isMapKeyboardTypingTarget(active) || isMapKeyboardTypingTarget(e.target)) {
+      return true;
+    }
+    return false;
+  }
+
+  function shouldBlockMapPanShortcut(e) {
+    if (shouldBlockMapKeyboardShortcut(e)) {
+      return true;
+    }
+    var active = document.activeElement;
+    var tag = active && active.tagName ? active.tagName.toLowerCase() : '';
+    return tag === 'select';
+  }
+
+  function isMapZoomInKey(e) {
+    return e.code === 'Equal' || e.code === 'NumpadAdd' || e.key === '+';
+  }
+
+  function isMapZoomOutKey(e) {
+    return e.code === 'Minus' || e.code === 'NumpadSubtract' || e.key === '-' || e.key === '_';
+  }
+
+  function isMapPanKey(e) {
+    return (
+      e.code === 'ArrowUp' ||
+      e.code === 'ArrowDown' ||
+      e.code === 'ArrowLeft' ||
+      e.code === 'ArrowRight'
+    );
+  }
+
+  var MAP_PAN_STEP_PX = 80;
+
+  window.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.altKey || e.metaKey) {
+      return;
+    }
+
+    if (isMapPanKey(e)) {
+      if (shouldBlockMapPanShortcut(e)) {
+        return;
+      }
+      var dx = 0;
+      var dy = 0;
+      if (e.code === 'ArrowUp') {
+        dy = -MAP_PAN_STEP_PX;
+      } else if (e.code === 'ArrowDown') {
+        dy = MAP_PAN_STEP_PX;
+      } else if (e.code === 'ArrowLeft') {
+        dx = -MAP_PAN_STEP_PX;
+      } else if (e.code === 'ArrowRight') {
+        dx = MAP_PAN_STEP_PX;
+      }
+      e.preventDefault();
+      map.panBy([dx, dy]);
+      return;
+    }
+
+    if (e.repeat || shouldBlockMapKeyboardShortcut(e)) {
+      return;
+    }
+    var numpad = e.code === 'NumpadAdd' || e.code === 'NumpadSubtract';
+    var shiftCombo = e.shiftKey;
+    if (!shiftCombo && !numpad) {
+      return;
+    }
+    if (isMapZoomInKey(e)) {
+      e.preventDefault();
+      map.zoomIn();
+    } else if (isMapZoomOutKey(e)) {
+      e.preventDefault();
+      map.zoomOut();
+    }
+  }, true);
 
   /* Coordinate readout + capture */
   function setFields(lat, lng) {
@@ -1221,6 +1374,18 @@
       if (window.MapCore && typeof window.MapCore.showCityBoundaryOnly === 'function') {
         window.MapCore.showCityBoundaryOnly(cityId, regionId);
       }
+    },
+    showCityChildBoundaries: function (cityId, opts) {
+      if (window.MapCore && typeof window.MapCore.showCityChildBoundaries === 'function') {
+        return window.MapCore.showCityChildBoundaries(cityId, opts);
+      }
+      return Promise.resolve(false);
+    },
+    showAreaWithStreets: function (areaId, cityId, opts) {
+      if (window.MapCore && typeof window.MapCore.showAreaWithStreets === 'function') {
+        return window.MapCore.showAreaWithStreets(areaId, cityId, opts);
+      }
+      return Promise.resolve(false);
     },
     showBlockBoundaryOnly: function (level, entityId, parentId) {
       if (window.MapCore && typeof window.MapCore.showBlockBoundaryOnly === 'function') {
