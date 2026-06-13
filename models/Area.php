@@ -91,11 +91,20 @@ final class Area
         ?float $lat,
         ?float $lng,
         ?string $code,
-        string $kind = 'neighborhood'
+        string $kind = 'neighborhood',
+        ?int $parentAreaId = null
     ): int {
         $name = self::sanitize($name);
         if ($cityId < 1 || City::find($cityId) === null) {
             throw new RuntimeException('المدينة المرتبطة غير صالحة.');
+        }
+        if ($parentAreaId !== null && $parentAreaId > 0) {
+            $parent = self::find($parentAreaId);
+            if ($parent === null || $parent->cityId !== $cityId) {
+                throw new RuntimeException('الحي الأب غير صالح أو لا يتبع نفس المدينة.');
+            }
+        } else {
+            $parentAreaId = null;
         }
         $code = $code !== null && $code !== '' ? strtoupper(trim($code)) : null;
         if ($code !== null && !preg_match('/^[A-Za-z0-9]{1,8}$/', $code)) {
@@ -110,18 +119,32 @@ final class Area
             throw new RuntimeException('تعذّر إنشاء الحي.');
         }
         $upd = $pdo->prepare(
-            'UPDATE areas SET lat = :lat, lng = :lng, code = :code, kind = :k WHERE id = :id'
+            'UPDATE areas SET lat = :lat, lng = :lng, code = :code, kind = :k, parent_area_id = :paid WHERE id = :id'
         );
         try {
             $upd->execute([
-                'lat'  => $lat,
-                'lng'  => $lng,
-                'code' => $code,
-                'k'    => $kind,
-                'id'   => $id,
+                'lat'   => $lat,
+                'lng'   => $lng,
+                'code'  => $code,
+                'k'     => $kind,
+                'paid'  => $parentAreaId,
+                'id'    => $id,
             ]);
         } catch (PDOException) {
-            /* قواعد قديمة بلا أعمدة lat/lng — يبقى الربط الهرمي عبر city_id */
+            /* أعمدة قديمة — حاول بدون parent_area_id */
+            try {
+                $pdo->prepare(
+                    'UPDATE areas SET lat = :lat, lng = :lng, code = :code, kind = :k WHERE id = :id'
+                )->execute([
+                    'lat'  => $lat,
+                    'lng'  => $lng,
+                    'code' => $code,
+                    'k'    => $kind,
+                    'id'   => $id,
+                ]);
+            } catch (PDOException) {
+                /* قواعد قديمة بلا أعمدة lat/lng */
+            }
         }
 
         return $id;

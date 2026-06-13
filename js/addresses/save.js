@@ -164,12 +164,8 @@
         })
         .then(function (x) {
           if (x.j && x.j.ok) {
-            try { cfg.editId = x.j.id; } catch (eId) {}
-            try { if (x.j.record) { AF.applySavedRecord(x.j.record, { skipShabiyaMapReload: true }); } } catch (eRec) {}
-            try {
-              history.replaceState(null, '', 'index.php?r=address_new&id=' + encodeURIComponent(String(x.j.id)));
-            } catch (eH) {}
             openSaveSuccessOverlay(x.j.record, x.j.postalCode, x.j.id);
+            AF.resetAfterSaveToShabiya();
             return;
           }
           AF.showMsg((x.j && x.j.message) || 'تعذّر الحفظ.', true);
@@ -233,21 +229,6 @@
     });
   }
 
-  /* Persist parcel description (saved with the "save settings" button). */
-  var btnSaveSet = document.getElementById('btn-save-settings');
-  if (btnSaveSet) {
-    btnSaveSet.addEventListener('click', function () {
-      var hintEl = document.getElementById('map-parcel-desc');
-      var hint = hintEl ? hintEl.value : '';
-      try {
-        localStorage.setItem('addrDashboardUi', JSON.stringify({ hint: hint, ts: Date.now() }));
-        AF.showMsg('حُفظت الإعدادات في المتصفح.', false);
-      } catch (e3) {
-        AF.showMsg('تعذّر الحفظ المحلي.', true);
-      }
-    });
-  }
-
   /* PNG export of the map workbench */
   var btnExport = document.getElementById('btn-export-png');
   if (btnExport) {
@@ -257,7 +238,7 @@
         return;
       }
       window.AddrMap.exportPng().catch(function () {
-        AF.showMsg('تعذّر تصدير الصورة (طبقات خارجية قد تُحظر).', true);
+        AF.showMsg('تعذّر تصدير الصورة. حدّث الصفحة (F5) ثم أعد المحاولة.', true);
       });
     });
   }

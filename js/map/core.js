@@ -105,6 +105,39 @@
 
   var marker = null;
 
+  var CITY_SELECT_EXTRA_ZOOM = 3;
+
+  function bumpMapZoomLevels(steps, opts) {
+    if (!map || !steps || steps < 1) {
+      return;
+    }
+    opts = opts || {};
+    var cap = typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : maxZ;
+    var target = Math.min(map.getZoom() + steps, cap);
+    if (target > map.getZoom()) {
+      map.setZoom(target, {
+        animate: opts.animate !== false,
+        duration: opts.duration != null ? opts.duration : 0.48
+      });
+    }
+  }
+
+  function scheduleAfterMapFly(callback, maxWaitMs) {
+    if (!map || typeof callback !== 'function') {
+      return;
+    }
+    var done = false;
+    function run() {
+      if (done) {
+        return;
+      }
+      done = true;
+      callback();
+    }
+    map.once('zoomend', run);
+    setTimeout(run, maxWaitMs != null ? maxWaitMs : 900);
+  }
+
   /* Shared "module-scope" state — exposed on window.MapCore for sibling modules. */
   var state = {
     markerModePending: false,
@@ -114,21 +147,16 @@
     selectedShabiyaLayer: null,
     cityPlacesLayer: null,
     cityBoundariesLayer: null,
+    boundaryLabelLayer: null,
     cityPlaceByName: {},
     drawMode: 'none',
     drawClickHandler: null,
     userOverviewLocked: false
   };
 
-  function hasUserAnchoredMapCoords() {
+  function hasPlacedAddressMarker() {
     if (readOnly) {
       return false;
-    }
-    if (state.userOverviewLocked) {
-      return true;
-    }
-    if (state.lastShabiyaDetail && String(state.lastShabiyaDetail.code || state.lastShabiyaDetail.name || '').trim()) {
-      return true;
     }
     if (marker) {
       return true;
@@ -142,6 +170,22 @@
       return false;
     }
     return bounds.contains(L.latLng(la, ln));
+  }
+
+  function hasUserAnchoredMapCoords() {
+    if (readOnly) {
+      return false;
+    }
+    if (state.userOverviewLocked) {
+      return true;
+    }
+    if (state.lastShabiyaDetail && String(state.lastShabiyaDetail.code || state.lastShabiyaDetail.name || '').trim()) {
+      return true;
+    }
+    if (hasPlacedAddressMarker()) {
+      return true;
+    }
+    return false;
   }
 
   function fitFullLibyaInView(opts) {
@@ -181,11 +225,11 @@
 
   var osmLayer = L.tileLayer(
     'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    Object.assign({ attribution: osmAttribution }, tileBaseOptsOsm)
+    Object.assign({ attribution: osmAttribution, crossOrigin: 'anonymous' }, tileBaseOptsOsm)
   );
   var satLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    Object.assign({ attribution: esriAttribution }, tileBaseOptsSat)
+    Object.assign({ attribution: esriAttribution, crossOrigin: 'anonymous' }, tileBaseOptsSat)
   );
   /* Offline base layer — backed by the local MBTiles file (Phase 1).
    * When a tile is missing it returns 204 and the SW falls back automatically. */
@@ -616,14 +660,17 @@
 
   function maxZoomForEntityLevel(level) {
     var lv = String(level || '').toLowerCase();
-    if (lv === 'street') { return Math.min(maxZ, 16); }
-    if (lv === 'area') { return Math.min(maxZ, 15); }
-    if (lv === 'city') { return Math.min(maxZ, 13); }
+    if (lv === 'street') { return Math.min(maxZ, 17); }
+    if (lv === 'area') { return Math.min(maxZ, 16); }
+    if (lv === 'city') { return Math.min(maxZ, 14); }
     return Math.min(maxZ, 12);
   }
 
   function flyToEntityLocation(level, entityId) {
     if (readOnly || !map || !level || !entityId) {
+      return Promise.resolve(false);
+    }
+    if (hasPlacedAddressMarker()) {
       return Promise.resolve(false);
     }
     if (typeof map.stop === 'function') {
@@ -653,11 +700,16 @@
             var bb = L.latLngBounds([south, west], [north, east]);
             if (bb.isValid()) {
               map.flyToBounds(bb, {
-                paddingTopLeft: [56, 92],
-                paddingBottomRight: [56, 56],
+                paddingTopLeft: [48, 64],
+                paddingBottomRight: [48, 48],
                 maxZoom: zCap,
                 duration: 0.55
               });
+              if (String(level).toLowerCase() === 'city') {
+                scheduleAfterMapFly(function () {
+                  bumpMapZoomLevels(CITY_SELECT_EXTRA_ZOOM);
+                });
+              }
               return true;
             }
           }
@@ -679,11 +731,16 @@
         var pad = String(level).toLowerCase() === 'street' ? 0.012 : 0.022;
         var ptBb = L.latLngBounds([lat - pad, lng - pad], [lat + pad, lng + pad]);
         map.flyToBounds(ptBb, {
-          paddingTopLeft: [56, 92],
-          paddingBottomRight: [56, 56],
+          paddingTopLeft: [48, 64],
+          paddingBottomRight: [48, 48],
           maxZoom: zCap,
           duration: 0.55
         });
+        if (String(level).toLowerCase() === 'city') {
+          scheduleAfterMapFly(function () {
+            bumpMapZoomLevels(CITY_SELECT_EXTRA_ZOOM);
+          });
+        }
         return true;
       })
       .catch(function () {
@@ -717,6 +774,9 @@
     state.lastShabiyaDetail = null;
     state.selectedPlace = null;
     state.userOverviewLocked = false;
+    if (window.MapCore && typeof window.MapCore.restoreShabiyatLayerIfHidden === 'function') {
+      window.MapCore.restoreShabiyatLayerIfHidden();
+    }
     if (window.MapCore && typeof window.MapCore.clearCityPlaces === 'function') {
       window.MapCore.clearCityPlaces();
     }
@@ -738,7 +798,7 @@
     if (window.MapCore && typeof window.MapCore.resetMapLayersForHierarchyChange === 'function') {
       if (lv === 'city') {
         window.MapCore.resetMapLayersForHierarchyChange({
-          clearPlaces: false,
+          clearPlaces: true,
           resetShabiya: false,
           keepShabiyaDetail: true,
           clearSelectedPlace: true
@@ -850,7 +910,11 @@
       return true;
     }
     var elI = document.getElementById('addr-city-area');
-    return !!(elI && String(elI.value || '').trim());
+    if (elI && String(elI.value || '').trim()) {
+      return true;
+    }
+    var neighEl = document.getElementById('addr-neighborhood');
+    return !!(neighEl && String(neighEl.value || '').trim());
   }
 
   function syncDashboardHud() {
@@ -1173,9 +1237,13 @@
       }
     }
     if (state.selectedPlace && state.selectedPlace.name) {
-      window.dispatchEvent(
-        new CustomEvent('addr-map-fill', { detail: { level: 'city', place: state.selectedPlace.name } })
-      );
+      var cityFieldEl = document.getElementById('addr-city-area');
+      var cityFieldVal = cityFieldEl ? String(cityFieldEl.value || '').trim() : '';
+      if (!cityFieldVal) {
+        window.dispatchEvent(
+          new CustomEvent('addr-map-fill', { detail: { level: 'city', place: state.selectedPlace.name } })
+        );
+      }
     }
     reverseGeocodeNeighborhood(ll.lat, ll.lng);
     syncMarkerCtaReveal();
@@ -1313,6 +1381,7 @@
     setMarkerModePending: function (b) { state.markerModePending = !!b; syncMarkerModeButton(); },
     /* helpers */
     nearestRegion: nearestRegion,
+    hasPlacedAddressMarker: hasPlacedAddressMarker,
     placeAddressMarker: placeAddressMarker,
     setFields: setFields,
     syncMarkerModeButton: syncMarkerModeButton,
@@ -1323,9 +1392,13 @@
     clearAddrApiMsgHideTimer: clearAddrApiMsgHideTimer,
     flyToPlace: flyToPlace,
     flyToEntityLocation: flyToEntityLocation,
+    bumpMapZoomLevels: bumpMapZoomLevels,
+    scheduleAfterMapFly: scheduleAfterMapFly,
+    CITY_SELECT_EXTRA_ZOOM: CITY_SELECT_EXTRA_ZOOM,
     flyToWilayahKey: flyToWilayahKey,
     clearMapSelection: clearMapSelection,
     fitLibya: fitLibya,
+    fitFullLibyaInView: fitFullLibyaInView,
     setBaseLayer: setBaseLayer,
     toggleLabelsOverlay: toggleLabelsOverlay,
     setDrawClickHandler: function (fn) { state.drawClickHandler = (typeof fn === 'function') ? fn : null; },
@@ -1370,6 +1443,10 @@
     },
     flyToWilayahKey: flyToWilayahKey,
     flyToEntityLocation: flyToEntityLocation,
+    hasPlacedAddressMarker: hasPlacedAddressMarker,
+    bumpMapZoomLevels: bumpMapZoomLevels,
+    scheduleAfterMapFly: scheduleAfterMapFly,
+    CITY_SELECT_EXTRA_ZOOM: CITY_SELECT_EXTRA_ZOOM,
     showCityBoundaryOnly: function (cityId, regionId) {
       if (window.MapCore && typeof window.MapCore.showCityBoundaryOnly === 'function') {
         window.MapCore.showCityBoundaryOnly(cityId, regionId);
@@ -1397,8 +1474,13 @@
         window.MapCore.showWilayahRegionGrids(wilayahKey);
       }
     },
+    restoreShabiyatLayerIfHidden: function () {
+      if (window.MapCore && typeof window.MapCore.restoreShabiyatLayerIfHidden === 'function') {
+        window.MapCore.restoreShabiyatLayerIfHidden();
+      }
+    },
     flyToLoadedCityPlace: function (name) {
-      if (readOnly || !name) {
+      if (readOnly || !name || hasPlacedAddressMarker()) {
         return;
       }
       var k = String(name).trim();
@@ -1480,23 +1562,175 @@
     getMap: function () { return map; },
     setBaseLayer: setBaseLayer,
     fitLibya: fitLibya,
+    fitFullLibyaInView: fitFullLibyaInView,
     toggleLabelsOverlay: toggleLabelsOverlay,
-    exportPng: function () {
-      var wrap = document.querySelector('.map-canvas-wrap--mgr');
-      if (!wrap || typeof html2canvas === 'undefined') {
-        return Promise.reject(new Error('html2canvas'));
+    exportPng: exportPng
+  };
+
+  var EXPORT_CANVAS_SCALE = 2;
+  var EXPORT_TILE_WAIT_MS = 350;
+
+  function waitForExportReady(mapRef, ms) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() {
+        if (done) {
+          return;
+        }
+        done = true;
+        resolve();
       }
-      return html2canvas(wrap, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 1,
-        logging: false
-      }).then(function (canvas) {
-        var a = document.createElement('a');
-        a.download = 'libya-map-export.png';
-        a.href = canvas.toDataURL('image/png');
-        a.click();
+      if (mapRef && typeof mapRef.once === 'function') {
+        mapRef.once('moveend', finish);
+      }
+      setTimeout(finish, ms != null ? ms : EXPORT_TILE_WAIT_MS);
+    });
+  }
+
+  function paintLeafletTilesOnCanvas(ctx, mapRef, scale) {
+    var container = mapRef.getContainer();
+    var pane = mapRef.getPane('tilePane');
+    if (!ctx || !container || !pane) {
+      return 0;
+    }
+    var mapRect = container.getBoundingClientRect();
+    var imgs = pane.querySelectorAll('img.leaflet-tile');
+    var drawn = 0;
+    for (var i = 0; i < imgs.length; i++) {
+      var img = imgs[i];
+      if (!img || !img.src || !img.complete || !img.naturalWidth) {
+        continue;
+      }
+      var r = img.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) {
+        continue;
+      }
+      var x = (r.left - mapRect.left) * scale;
+      var y = (r.top - mapRect.top) * scale;
+      try {
+        ctx.drawImage(img, x, y, r.width * scale, r.height * scale);
+        drawn += 1;
+      } catch (tileErr) {}
+    }
+    return drawn;
+  }
+
+  function paintPostalLabelsOnCanvas(ctx, mapRef, scale) {
+    var regions = window.MapCore && window.MapCore.regions ? window.MapCore.regions : [];
+    var paintFn =
+      window.MapCore && typeof window.MapCore.paintBoundaryLabelOnCanvas === 'function'
+        ? window.MapCore.paintBoundaryLabelOnCanvas
+        : null;
+    if (!ctx || !mapRef || !paintFn || !regions.length) {
+      return;
+    }
+    var viewBounds = typeof mapRef.getBounds === 'function' ? mapRef.getBounds() : null;
+    for (var i = 0; i < regions.length; i++) {
+      var lb = regions[i];
+      var code = lb.code || (lb.province && lb.n ? lb.province + lb.n : '');
+      if (typeof lb.lat !== 'number' || typeof lb.lng !== 'number' || !code) {
+        continue;
+      }
+      var ll = L.latLng(lb.lat, lb.lng);
+      if (viewBounds && !viewBounds.contains(ll)) {
+        continue;
+      }
+      paintFn(ctx, mapRef, scale, String(code), ll, false);
+    }
+  }
+
+  function buildMapExportCanvas(mapRef, scale, payload) {
+    scale = scale || 1;
+    var size = mapRef.getSize();
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(size.x * scale));
+    canvas.height = Math.max(1, Math.round(size.y * scale));
+    var ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('canvas');
+    }
+    ctx.fillStyle = '#01030a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    paintLeafletTilesOnCanvas(ctx, mapRef, scale);
+    var opts = payload && payload.opts ? payload.opts : {};
+    if (window.MapCore && typeof window.MapCore.compositeMapExportCanvasSync === 'function') {
+      window.MapCore.compositeMapExportCanvasSync(canvas, mapRef, scale, payload);
+    }
+    if (opts.includePostalLabels !== false) {
+      paintPostalLabelsOnCanvas(ctx, mapRef, scale);
+    }
+    return canvas;
+  }
+
+  function beginMapExport() {
+    var restoreFns = [];
+
+    if (marker && map.hasLayer(marker)) {
+      map.removeLayer(marker);
+      restoreFns.push(function () {
+        marker.addTo(map);
       });
     }
-  };
+
+    if (map.zoomControl) {
+      map.removeControl(map.zoomControl);
+      restoreFns.push(function () {
+        map.addControl(map.zoomControl);
+      });
+    }
+
+    if (map.attributionControl) {
+      map.removeControl(map.attributionControl);
+      restoreFns.push(function () {
+        map.addControl(map.attributionControl);
+      });
+    }
+
+    return function restoreMapExport() {
+      for (var i = restoreFns.length - 1; i >= 0; i--) {
+        try {
+          restoreFns[i]();
+        } catch (exportRestoreErr) {}
+      }
+      map.invalidateSize(false);
+    };
+  }
+
+  function resolveExportSnapshot() {
+    if (window.MapCore && typeof window.MapCore.captureFullExportSnapshot === 'function') {
+      return Promise.resolve(window.MapCore.captureFullExportSnapshot());
+    }
+    if (window.MapCore && typeof window.MapCore.resolveExportBoundarySnapshot === 'function') {
+      return window.MapCore.resolveExportBoundarySnapshot();
+    }
+    return Promise.resolve({ items: [], opts: {} });
+  }
+
+  function exportPng() {
+    if (!map || typeof map.getSize !== 'function') {
+      return Promise.reject(new Error('map'));
+    }
+
+    var savedCenter = map.getCenter();
+    var savedZoom = map.getZoom();
+    var exportPayload = null;
+
+    return resolveExportSnapshot()
+      .then(function (payload) {
+        exportPayload = payload || { items: [], opts: {} };
+        var restoreMapExport = beginMapExport();
+        return waitForExportReady(map, EXPORT_TILE_WAIT_MS)
+          .then(function () {
+            var canvas = buildMapExportCanvas(map, EXPORT_CANVAS_SCALE, exportPayload);
+            var a = document.createElement('a');
+            a.download = 'libya-map-export.png';
+            a.href = canvas.toDataURL('image/png');
+            a.click();
+          })
+          .finally(function () {
+            restoreMapExport();
+            map.setView(savedCenter, savedZoom, { animate: false });
+          });
+      });
+  }
 })();

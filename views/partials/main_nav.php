@@ -27,7 +27,6 @@ $isActive   = static function (string $k) use ($navCurrent): string {
     <?php if ($isAdmin): ?>
     <a class="main-nav__link<?= $isActive('users') ?>" href="index.php?r=users">المستخدمون</a>
     <a class="main-nav__link<?= $isActive('admin_geo') ?>" href="index.php?r=admin_geo">التقسيم الإداري</a>
-    <a class="main-nav__link<?= $isActive('tile_sync') ?>" href="index.php?r=tile_sync">مزامنة الخريطة</a>
     <?php endif; ?>
     <a class="main-nav__link<?= $isActive('profile') ?>" href="index.php?r=profile">حسابي</a>
 </nav>

@@ -13,6 +13,7 @@
  *
  * Talks to BoundaryEditorController:
  *   GET  index.php?r=boundary_entities      &level=&parent_id=
+ *   GET  index.php?r=boundary_get           &level=&entity_id=  (saved geometry from DB)
  *   GET  index.php?r=boundary_list          &level=&parent_id=
  *   POST index.php?r=boundary_save          (CSRF)
  *   POST index.php?r=boundary_delete        (CSRF)
@@ -51,6 +52,16 @@
   var bounds = L.latLngBounds([swLat, swLng], [neLat, neLng]);
   var minZ = parseInt(el.dataset.minZoom, 10) || 5;
   var maxZ = parseInt(el.dataset.maxZoom, 10) || 19;
+  var maxZSat = parseInt(el.dataset.maxZoomSat, 10) || 17;
+  var currentBaseKind = 'osm';
+
+  function applyMapMaxZoomForBase(kind) {
+    var cap = kind === 'sat' ? maxZSat : maxZ;
+    map.setMaxZoom(cap);
+    if (map.getZoom() > cap) {
+      map.setZoom(cap);
+    }
+  }
 
   var map = L.map('be-map', {
     maxBounds: bounds,
@@ -58,6 +69,8 @@
     minZoom: minZ,
     maxZoom: maxZ
   });
+  map.createPane('labelEditPane');
+  map.getPane('labelEditPane').style.zIndex = 960;
 
   /* Default = OSM so the user always sees a map. The offline layer is wired
    * but only auto-falls-back when MBTiles is empty/missing. */
@@ -70,7 +83,65 @@
     maxZoom: maxZ, maxNativeZoom: 19, bounds: bounds,
     attribution: '&copy; OpenStreetMap'
   });
+  var satLayer = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {
+      maxZoom: maxZSat,
+      maxNativeZoom: maxZSat,
+      bounds: bounds,
+      attribution: '&copy; Esri, Maxar, Earthstar Geographics'
+    }
+  );
+
+  function syncBaseLayerUi() {
+    var satActive = currentBaseKind === 'sat';
+    document.querySelectorAll('.be-base-map-btn[data-base]').forEach(function (btn) {
+      var isSat = btn.getAttribute('data-base') === 'sat';
+      var active = isSat ? satActive : !satActive;
+      btn.classList.toggle('is-active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function setBaseLayer(kind) {
+    if (kind !== 'sat' && kind !== 'osm') {
+      return;
+    }
+    currentBaseKind = kind;
+    if (kind === 'sat') {
+      if (map.hasLayer(osm)) {
+        map.removeLayer(osm);
+      }
+      if (!map.hasLayer(satLayer)) {
+        satLayer.addTo(map);
+      }
+    } else {
+      if (map.hasLayer(satLayer)) {
+        map.removeLayer(satLayer);
+      }
+      if (!map.hasLayer(osm)) {
+        osm.addTo(map);
+      }
+    }
+    applyMapMaxZoomForBase(kind);
+    syncBaseLayerUi();
+    map.invalidateSize(false);
+    if (typeof satLayer.redraw === 'function') {
+      satLayer.redraw();
+    }
+    if (typeof osm.redraw === 'function') {
+      osm.redraw();
+    }
+  }
+
+  document.querySelectorAll('.be-base-map-btn[data-base]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setBaseLayer(btn.getAttribute('data-base') === 'sat' ? 'sat' : 'osm');
+    });
+  });
+
   osm.addTo(map);
+  syncBaseLayerUi();
   map.fitBounds(bounds, { padding: [20, 20] });
 
   /* Ensure the map fills its container correctly after layout settles. */
@@ -140,6 +211,13 @@
     return ENTITY_PLACEHOLDERS[state.level] || 'اختر كياناً';
   }
 
+  function boundaryScopeParams(level, parentId) {
+    return {
+      level: level || state.level,
+      parent_id: parentId != null ? parentId : (state.drillParentId || '')
+    };
+  }
+
   function updateEntityUi() {
     if (entityLabel) {
       entityLabel.textContent = ENTITY_LABELS[state.level] || 'الكيان المراد تحريره';
@@ -164,6 +242,8 @@
   var addChildBtn = document.getElementById('be-add-child-btn');
   var addChildCtx = document.getElementById('be-add-child-ctx');
   var addChildCancel = document.getElementById('be-add-child-cancel');
+  var labelPosWrap = document.getElementById('be-label-pos-wrap');
+  var labelResetBtn = document.getElementById('be-label-reset-btn');
 
   var tabs = document.querySelectorAll('.be-tab');
 
@@ -193,6 +273,8 @@
   var GRID_LEVELS = { city: true, area: true };
   var ADD_CHILD_LEVELS = { area: true, street: true };
   var CREATE_ON_SAVE_LEVELS = { region: true, city: true, area: true, street: true };
+  var LABEL_POSITION_LEVELS = { city: true, area: true, street: true };
+  var contextLabelSeen = {};
   var DRILL_CHILD = { state: 'region', region: 'city', city: 'area', area: 'street' };
   var MAX_SPAN = { city: 0.85, area: 0.35, street: 0.12 };
   var DISMISS_KEY = 'be_dismissed_grids';
@@ -218,8 +300,219 @@
     regionsOverviewLayer: L.layerGroup().addTo(map),
     labelsLayer: L.layerGroup().addTo(map),
     pickLayer: L.layerGroup().addTo(map),
-    siblingsLayer: L.layerGroup().addTo(map)
+    siblingsLayer: L.layerGroup().addTo(map),
+    labelLayer: L.layerGroup().addTo(map),
+    contextLabelLayer: L.layerGroup().addTo(map),
+    labelMarker: null,
+    labelDirty: false
   };
+
+  function labelPositionSupported() {
+    return !!LABEL_POSITION_LEVELS[state.level];
+  }
+
+  function escapeLabelHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function syncLabelUi() {
+    var show = labelPositionSupported() && !!state.currentLayer && (!!state.entityId || !!state.addNewMode);
+    if (labelPosWrap) {
+      labelPosWrap.hidden = !show;
+    }
+    if (labelResetBtn) {
+      labelResetBtn.disabled = !show || !state.labelMarker;
+    }
+  }
+
+  function removeLabelMarker() {
+    if (state.labelMarker) {
+      try { state.labelLayer.removeLayer(state.labelMarker); } catch (eRm) {}
+      state.labelMarker = null;
+    }
+    syncLabelUi();
+  }
+
+  function boundaryLayerCenter(layer) {
+    if (!layer || !layer.getBounds) { return null; }
+    try {
+      var c = layer.getBounds().getCenter();
+      return c ? { lat: c.lat, lng: c.lng } : null;
+    } catch (eC) {
+      return null;
+    }
+  }
+
+  function featureCenterFromGeoJSON(feature) {
+    if (!feature || !feature.geometry) { return null; }
+    var tmp = null;
+    try {
+      tmp = L.geoJSON(feature);
+      var c = tmp.getBounds().getCenter();
+      return c ? { lat: c.lat, lng: c.lng } : null;
+    } catch (eFc) {
+      return null;
+    } finally {
+      if (tmp) {
+        try { map.removeLayer(tmp); } catch (eRm) {}
+      }
+    }
+  }
+
+  function labelPositionFromProps(props, layer, feature) {
+    var lat = props && props.label_lat != null ? Number(props.label_lat) : NaN;
+    var lng = props && props.label_lng != null ? Number(props.label_lng) : NaN;
+    if (lat === lat && lng === lng) {
+      return { lat: lat, lng: lng };
+    }
+    return boundaryLayerCenter(layer) || featureCenterFromGeoJSON(feature);
+  }
+
+  function buildLabelMarkerIcon(name, editable) {
+    var safe = escapeLabelHtml(name || state.entityName || '—');
+    var pinCls = 'be-label-pin' + (editable ? ' be-label-pin--edit' : ' be-label-pin--ctx');
+    return L.divIcon({
+      className: 'be-label-pin-icon' + (editable ? ' be-label-pin-icon--edit' : ' be-label-pin-icon--ctx'),
+      html:
+        '<div class="' + pinCls + '" title="' + safe + '">' +
+        '<span class="be-label-pin__text">' + safe + '</span>' +
+        '<span class="be-label-pin__dot" aria-hidden="true"></span>' +
+        '</div>',
+      iconSize: [1, 1],
+      iconAnchor: [0, 0]
+    });
+  }
+
+  function patchLabelMarkerIcon(marker) {
+    if (!marker || !marker._icon) { return; }
+    var icon = marker._icon;
+    icon.style.pointerEvents = 'auto';
+    icon.style.overflow = 'visible';
+    icon.style.background = 'transparent';
+    icon.style.border = 'none';
+    var pin = icon.querySelector('.be-label-pin');
+    if (pin) {
+      pin.style.pointerEvents = 'auto';
+    }
+  }
+
+  function refreshLabelMarkerText() {
+    if (!state.labelMarker) { return; }
+    var nm = (nameIn && nameIn.value) ? String(nameIn.value).trim() : state.entityName;
+    state.labelMarker.setIcon(buildLabelMarkerIcon(nm, true));
+    patchLabelMarkerIcon(state.labelMarker);
+  }
+
+  function installLabelMarker(lat, lng, name) {
+    removeLabelMarker();
+    if (!labelPositionSupported() || lat == null || lng == null) {
+      return;
+    }
+    state.labelMarker = L.marker([lat, lng], {
+      draggable: true,
+      pane: 'labelEditPane',
+      pmIgnore: true,
+      interactive: true,
+      icon: buildLabelMarkerIcon(name, true),
+      zIndexOffset: 2000
+    });
+    state.labelMarker.on('add', function () {
+      patchLabelMarkerIcon(state.labelMarker);
+    });
+    state.labelMarker.on('dragend', function () {
+      state.labelDirty = true;
+      updateSaveButton();
+      syncLabelUi();
+    });
+    state.labelMarker.on('mouseover', function () {
+      if (state.labelMarker.bringToFront) { state.labelMarker.bringToFront(); }
+    });
+    state.labelMarker.addTo(state.labelLayer);
+    patchLabelMarkerIcon(state.labelMarker);
+    if (state.labelMarker.bringToFront) { state.labelMarker.bringToFront(); }
+    syncLabelUi();
+  }
+
+  function clearContextLabelPins() {
+    contextLabelSeen = {};
+    state.contextLabelLayer.clearLayers();
+  }
+
+  function installContextLabelPin(feature, level) {
+    if (!LABEL_POSITION_LEVELS[level]) { return; }
+    var p = (feature && feature.properties) || {};
+    if (p.is_point || (feature.geometry && feature.geometry.type === 'Point')) { return; }
+    var eid = Number(p.entity_id);
+    if (!eid || contextLabelSeen[eid]) { return; }
+    if (state.entityId && eid === Number(state.entityId)) { return; }
+    contextLabelSeen[eid] = true;
+    var pos = labelPositionFromProps(p, null, feature);
+    if (!pos) { return; }
+    var nm = p.name || '';
+    if (!nm) { return; }
+    var marker = L.marker([pos.lat, pos.lng], {
+      draggable: false,
+      pane: 'labelEditPane',
+      pmIgnore: true,
+      interactive: false,
+      icon: buildLabelMarkerIcon(nm, false),
+      zIndexOffset: 1500
+    });
+    marker.on('add', function () {
+      patchLabelMarkerIcon(marker);
+    });
+    marker.addTo(state.contextLabelLayer);
+    patchLabelMarkerIcon(marker);
+  }
+
+  function syncLabelMarkerFromFeature(feature) {
+    if (!labelPositionSupported() || !state.currentLayer) {
+      removeLabelMarker();
+      state.labelDirty = false;
+      syncLabelUi();
+      return;
+    }
+    var props = (feature && feature.properties) || {};
+    var pos = labelPositionFromProps(props, state.currentLayer, feature);
+    if (!pos) {
+      removeLabelMarker();
+      state.labelDirty = false;
+      syncLabelUi();
+      return;
+    }
+    installLabelMarker(pos.lat, pos.lng, props.name || state.entityName);
+    state.labelDirty = false;
+    syncLabelUi();
+  }
+
+  function centerLabelOnBoundary() {
+    if (!state.currentLayer) { return; }
+    var pos = boundaryLayerCenter(state.currentLayer);
+    if (!pos) { return; }
+    if (state.labelMarker) {
+      state.labelMarker.setLatLng([pos.lat, pos.lng]);
+    } else {
+      installLabelMarker(pos.lat, pos.lng, state.entityName);
+    }
+    state.labelDirty = true;
+    updateSaveButton();
+    syncLabelUi();
+    setStatus('تم توسيط اسم العنوان على الحد — اضغط «حفظ» لتثبيت الموقع.', false);
+  }
+
+  function appendLabelCoordsToForm(fd) {
+    if (!labelPositionSupported() || !state.labelMarker) {
+      return;
+    }
+    var ll = state.labelMarker.getLatLng();
+    if (!ll) { return; }
+    fd.append('label_lat', String(ll.lat));
+    fd.append('label_lng', String(ll.lng));
+  }
 
   function loadPostalRegions() {
     var el = document.getElementById('postal-map-regions-data');
@@ -257,21 +550,16 @@
   function syncLayerToggle(name, layer, checkboxId) {
     var cb = document.getElementById(checkboxId);
     if (!cb || !layer) { return; }
-    var apply = function () {
-      if (cb.checked) {
-        if (!map.hasLayer(layer)) { map.addLayer(layer); }
-      } else if (map.hasLayer(layer)) {
-        map.removeLayer(layer);
-      }
-    };
-    cb.addEventListener('change', apply);
-    apply();
+    cb.addEventListener('change', function () {
+      updateOverviewVisibility();
+    });
   }
 
   installBoundaryLabels();
   syncLayerToggle('states', state.statesOverviewLayer, 'be-layer-states');
   syncLayerToggle('regions', state.regionsOverviewLayer, 'be-layer-regions');
   syncLayerToggle('labels', state.labelsLayer, 'be-layer-labels');
+  syncLayerControlsUi();
 
   function loadDismissedGrids() {
     try {
@@ -462,6 +750,62 @@
     });
   }
 
+  function resetEntitySelectLoading() {
+    if (!entitySel) { return; }
+    entitySel.innerHTML = '';
+    var op0 = document.createElement('option');
+    op0.value = '';
+    op0.textContent = 'جارٍ التحميل…';
+    entitySel.appendChild(op0);
+    /* Keep enabled so the user can still open the list; options refresh when fetch completes. */
+    entitySel.disabled = false;
+  }
+
+  function resolveTabParentId(nextLevel, prevLevel, prevEntityId, prevEntityName, cv) {
+    var parentId = null;
+
+    if (cv && cv.level === nextLevel && cv.parentId) {
+      return cv.parentId;
+    }
+
+    if (nextLevel === 'region' && prevLevel === 'state' && prevEntityId) {
+      parentId = prevEntityId;
+      setParentContext('state', prevEntityId, prevEntityName);
+      return parentId;
+    }
+    if (nextLevel === 'city' && prevLevel === 'region' && prevEntityId) {
+      parentId = prevEntityId;
+      setParentContext('region', prevEntityId, prevEntityName);
+      return parentId;
+    }
+    if (nextLevel === 'area') {
+      if (prevLevel === 'city' && prevEntityId) {
+        parentId = prevEntityId;
+        setParentContext('city', prevEntityId, prevEntityName);
+        return parentId;
+      }
+      if (state.parentContext && state.parentContext.level === 'city' && state.parentContext.id) {
+        return state.parentContext.id;
+      }
+      return null;
+    }
+    if (nextLevel === 'street') {
+      if (prevLevel === 'area' && prevEntityId) {
+        parentId = prevEntityId;
+        setParentContext('area', prevEntityId, prevEntityName);
+        return parentId;
+      }
+      if (state.parentContext && state.parentContext.level === 'area' && state.parentContext.id) {
+        return state.parentContext.id;
+      }
+      return null;
+    }
+    if (nextLevel !== 'state') {
+      return null;
+    }
+    return parentId;
+  }
+
   function activateTab(level) {
     tabs.forEach(function (t) {
       t.classList.toggle('is-active', t.dataset.level === level);
@@ -469,7 +813,7 @@
     state.level = level;
     updateEntityUi();
     syncDeleteButton();
-    updateOverviewVisibility();
+    syncLayerControlsUi();
     syncAddChildUi();
   }
 
@@ -652,8 +996,7 @@
         refreshEntityList().then(function () {
           if (entitySel) { entitySel.value = String(data.id); }
           if (data.feature) {
-            removeCurrentLayer();
-            installCurrentLayer(data.feature);
+            applyLoadedBoundaryFeature(data.feature, true);
           }
           drawSiblingsLayer(state.drillParentId);
           if (state.drillParentId) {
@@ -675,16 +1018,51 @@
       });
   }
 
+  var layerOverviewWrap = document.getElementById('be-layer-overview-wrap');
+  var layerOverviewLabel = document.getElementById('be-map-controls-overview-label');
+
+  function syncLayerControlsUi() {
+    var level = state.level;
+    var showOverview = level === 'state' || level === 'region';
+    if (layerOverviewWrap) {
+      layerOverviewWrap.hidden = !showOverview;
+    }
+    if (layerOverviewLabel) {
+      layerOverviewLabel.textContent = level === 'state'
+        ? 'طبقات الولاية والشعبيات'
+        : 'طبقات الشعبيات والتسميات';
+    }
+    var stateRow = document.querySelector('.be-layer-check--states');
+    var regionRow = document.querySelector('.be-layer-check--regions');
+    var labelsRow = document.querySelector('.be-layer-check--labels');
+    if (stateRow) { stateRow.hidden = level !== 'state'; }
+    if (regionRow) { regionRow.hidden = !showOverview; }
+    if (labelsRow) { labelsRow.hidden = !showOverview; }
+    updateOverviewVisibility();
+  }
+
   function updateOverviewVisibility() {
-    var deep = (state.level === 'city' || state.level === 'area' || state.level === 'street')
-      && !!state.drillParentId;
-    var layers = [state.statesOverviewLayer, state.regionsOverviewLayer];
-    layers.forEach(function (layer) {
-      if (!layer) { return; }
-      if (deep) {
-        if (map.hasLayer(layer)) { map.removeLayer(layer); }
-      } else if (!map.hasLayer(layer)) {
-        map.addLayer(layer);
+    var showOverview = state.level === 'state' || state.level === 'region';
+    var layers = [
+      { layer: state.statesOverviewLayer, cb: 'be-layer-states' },
+      { layer: state.regionsOverviewLayer, cb: 'be-layer-regions' },
+      { layer: state.labelsLayer, cb: 'be-layer-labels' }
+    ];
+    layers.forEach(function (entry) {
+      if (!entry.layer) { return; }
+      if (!showOverview) {
+        if (map.hasLayer(entry.layer)) { map.removeLayer(entry.layer); }
+        return;
+      }
+      if (state.level === 'region' && entry.cb === 'be-layer-states') {
+        if (map.hasLayer(entry.layer)) { map.removeLayer(entry.layer); }
+        return;
+      }
+      var cb = document.getElementById(entry.cb);
+      if (cb && cb.checked && !map.hasLayer(entry.layer)) {
+        map.addLayer(entry.layer);
+      } else if (cb && !cb.checked && map.hasLayer(entry.layer)) {
+        map.removeLayer(entry.layer);
       }
     });
   }
@@ -801,6 +1179,29 @@
     }
   }
 
+  function openAreaEditorForCity(cityId, cityName, layer) {
+    var cid = Number(cityId);
+    if (!cid) { return; }
+    activateTab('area');
+    state.drillParentId = cid;
+    state.childView = { level: 'area', parentId: cid };
+    setParentContext('city', cid, cityName || '');
+    state.entityId = 0;
+    state.entityName = '';
+    if (entitySel) { entitySel.value = ''; }
+    setEntityProps(null);
+    removeCurrentLayer();
+    syncDeleteButton();
+    syncAddChildUi();
+    resetEntitySelectLoading();
+    setStatus('جارٍ تحميل الأحياء…', false);
+    refreshEntityList().then(function () {
+      loadPickLayer('area', cid);
+      if (layer) { flyToLayer(layer); }
+      setStatus('اختر حيّاً من القائمة أو انقر على الخريطة.', false);
+    });
+  }
+
   function revealChildren(childLevel, parentId, layer) {
     if (!childLevel || !parentId) { return; }
     state.childView = { level: childLevel, parentId: parentId };
@@ -819,7 +1220,6 @@
     state.drillParentId = parentId;
     state.childView = { level: nextLevel, parentId: parentId };
     setParentContext(parentLevel, parentId, parentName);
-    updateOverviewVisibility();
     removeCurrentLayer();
     setEntityProps(null);
     state.entityId = 0;
@@ -847,8 +1247,9 @@
         state.drillParentId = Number(props.parent_id);
         state.childView = { level: 'city', parentId: state.drillParentId };
       }
-      selectEntity('city', entityId, props, layer, false);
-      revealChildren('area', entityId, layer);
+      var cityName = props && props.name ? String(props.name) : '';
+      setParentContext('city', entityId, cityName);
+      openAreaEditorForCity(entityId, cityName, layer);
       return;
     }
     if (level === 'area') {
@@ -984,19 +1385,24 @@
 
   function loadPickLayer(level, parentId) {
     state.pickLayer.clearLayers();
-    if (!parentId) { return Promise.resolve(); }
+    if (!parentId) {
+      clearContextLabelPins();
+      return Promise.resolve();
+    }
     var seq = ++pickSeq;
-    var url = apiUrl('boundary_list', { level: level, parent_id: parentId });
+    var url = apiUrl('boundary_list', boundaryScopeParams(level, parentId));
     return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : { features: [] }; })
       .then(function (fc) {
         if (seq !== pickSeq) { return; }
+        if (!state.entityId) { clearContextLabelPins(); }
         var feats = (fc && fc.features) || [];
         feats.forEach(function (f) {
           var p = f.properties || {};
           if (shouldSkipGridFeature(level, p)) { return; }
           if (state.entityId && Number(p.entity_id) === Number(state.entityId)) { return; }
           addGeoFeatureToGroup(f, level, state.pickLayer, 0);
+          if (!state.entityId) { installContextLabelPin(f, level); }
         });
       });
   }
@@ -1117,7 +1523,7 @@
       if (r.parent_id) { op.dataset.parentId = String(r.parent_id); }
       selectEl.appendChild(op);
     });
-    selectEl.disabled = rows.length === 0;
+    selectEl.disabled = false;
   }
 
   function applyParentFromOption(op) {
@@ -1248,11 +1654,13 @@
         setStatus(resp.message, true);
       }
       fillSelect(entitySel, rows, entityPlaceholder());
-      if (entitySel) { entitySel.disabled = rows.length === 0; }
-      drawSiblingsLayer(parentId);
       syncDeleteButton();
       if (rows.length === 0 && !(resp && resp.ok === false && resp.message)) {
-        if (parentId && (level === 'region' || level === 'city' || level === 'area' || level === 'street')) {
+        if (level === 'area' && !parentId) {
+          setStatus('اختر مدينة من تبويب «مدينة» (مثلاً درنة) ثم عد لتبويب «حي».', true);
+        } else if (level === 'street' && !parentId) {
+          setStatus('اختر حيّاً من تبويب «حي» ثم عد لتبويب «شارع».', true);
+        } else if (parentId && (level === 'region' || level === 'city' || level === 'area' || level === 'street')) {
           setStatus('لا توجد كيانات تحت الأب المحدد — اختر أباً آخر أو انتقل لمستوى أعلى.', true);
         } else {
           setStatus('لا توجد كيانات في قاعدة البيانات لهذا المستوى.', true);
@@ -1260,19 +1668,33 @@
       } else if (!state.entityId) {
         setStatus('اختر من القائمة أو انقر على الخريطة.', false);
       }
+    }).catch(function (err) {
+      if (seq !== listSeq || level !== state.level) { return; }
+      fillSelect(entitySel, [], entityPlaceholder());
+      setStatus('تعذّر تحميل القائمة — حدّث الصفحة.', true);
+      reportEditorError(err, 'تعذّر تحميل القائمة');
+    }).finally(function () {
+      if (seq !== listSeq || level !== state.level || !entitySel) { return; }
+      var stillLoading = entitySel.options.length === 1
+        && entitySel.options[0].value === ''
+        && entitySel.options[0].textContent === 'جارٍ التحميل…';
+      if (stillLoading) {
+        fillSelect(entitySel, [], entityPlaceholder());
+      }
     });
   }
 
   function drawSiblingsLayer(parentId) {
     state.siblingsLayer.clearLayers();
     if (state.level === 'state' && !state.entityId) {
+      clearContextLabelPins();
       return Promise.resolve(null);
     }
+    if (state.entityId && LABEL_POSITION_LEVELS[state.level]) {
+      clearContextLabelPins();
+    }
     var seq = ++siblingsSeq;
-    var url = apiUrl('boundary_list', {
-      level: state.level,
-      parent_id: parentId || ''
-    });
+    var url = apiUrl('boundary_list', boundaryScopeParams(state.level, parentId));
     return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : { features: [] }; })
       .then(function (fc) {
@@ -1283,6 +1705,7 @@
           if (shouldSkipGridFeature(state.level, p)) { return; }
           if (state.entityId && Number(p.entity_id) === Number(state.entityId)) { return; }
           addGeoFeatureToGroup(f, state.level, state.siblingsLayer, 0);
+          if (state.entityId) { installContextLabelPin(f, state.level); }
         });
         return fc;
       })
@@ -1319,26 +1742,9 @@
       var prevEntityId = state.entityId;
       var prevEntityName = state.entityName;
       activateTab(nextLevel);
+      resetEntitySelectLoading();
       var cv = state.childView;
-      var parentId = null;
-
-      if (cv && cv.level === nextLevel && cv.parentId) {
-        parentId = cv.parentId;
-      } else if (nextLevel === 'region' && prevLevel === 'state' && prevEntityId) {
-        parentId = prevEntityId;
-        setParentContext('state', prevEntityId, prevEntityName);
-      } else if (nextLevel === 'city' && prevLevel === 'region' && prevEntityId) {
-        parentId = prevEntityId;
-        setParentContext('region', prevEntityId, prevEntityName);
-      } else if (nextLevel === 'area' && prevLevel === 'city' && prevEntityId) {
-        parentId = prevEntityId;
-        setParentContext('city', prevEntityId, prevEntityName);
-      } else if (nextLevel === 'street' && prevLevel === 'area' && prevEntityId) {
-        parentId = prevEntityId;
-        setParentContext('area', prevEntityId, prevEntityName);
-      } else if (nextLevel !== 'state') {
-        parentId = null;
-      }
+      var parentId = resolveTabParentId(nextLevel, prevLevel, prevEntityId, prevEntityName, cv);
 
       if (nextLevel === 'state') {
         parentId = null;
@@ -1346,22 +1752,34 @@
       }
 
       state.drillParentId = parentId;
+      if (nextLevel === 'area' && parentId) {
+        var cityName = prevLevel === 'city' ? prevEntityName : (state.parentContext && state.parentContext.name) || '';
+        setParentContext('city', parentId, cityName);
+      } else if (nextLevel === 'street' && parentId) {
+        var areaName = prevLevel === 'area' ? prevEntityName : (state.parentContext && state.parentContext.name) || '';
+        setParentContext('area', parentId, areaName);
+      }
       if (!state.drillParentId) {
         state.pickLayer.clearLayers();
-      } else {
-        loadPickLayer(nextLevel, state.drillParentId);
       }
       removeCurrentLayer();
       setEntityProps(null);
       state.entityId = 0;
       setStatus('جارٍ تحميل الكيانات…', false);
       refreshEntityList().then(function () {
-        if (state.drillParentId && (nextLevel === 'city' || nextLevel === 'area' || nextLevel === 'street')) {
-          return drawSiblingsLayer(state.drillParentId).then(function (fc) {
-            if (fc) { flyToFeatureCollection(fc, nextLevel); }
-          });
+        if (!state.drillParentId) {
+          syncAddChildUi();
+          return;
         }
-        syncAddChildUi();
+        return loadPickLayer(nextLevel, state.drillParentId).then(function () {
+          if (nextLevel === 'city' || nextLevel === 'area' || nextLevel === 'street') {
+            return drawSiblingsLayer(state.drillParentId).then(function (fc) {
+              if (fc) { flyToFeatureCollection(fc, nextLevel); }
+            });
+          }
+        }).then(function () {
+          syncAddChildUi();
+        });
       });
     });
   });
@@ -1412,7 +1830,7 @@
           return !shouldSkipGridFeature(level, p);
         });
         if (match) {
-          installCurrentLayer(match);
+          applyLoadedBoundaryFeature(match, false);
           return;
         }
         if (fc && fc.features && fc.features.length) {
@@ -1429,50 +1847,52 @@
     var level = state.level;
     var entityId = state.entityId;
     var seq = ++boundarySeq;
-    var listUrl = apiUrl('boundary_list', {
-      level: level,
-      parent_id: state.drillParentId || ''
-    });
-    return fetch(listUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : { features: [] }; })
-      .then(function (fc) {
+    var getUrl = apiUrl('boundary_get', { level: level, entity_id: entityId });
+
+    function finishFromList(fc) {
+      if (seq !== boundarySeq || level !== state.level || entityId !== state.entityId) {
+        return false;
+      }
+      var match = (fc.features || []).find(function (f) {
+        var p = f.properties || {};
+        if (Number(p.entity_id) !== Number(state.entityId)) { return false; }
+        return !shouldSkipGridFeature(level, p);
+      });
+      if (!match) {
+        var dismissed = isGridDismissed(level, entityId);
+        setStatus(
+          dismissed
+            ? 'الشبكة محذوفة — ارسم مضلعاً جديداً ثم احفظ، أو اضغط «إعادة الشبكة».'
+            : 'لا توجد حدود محفوظة — ارسم مضلعاً جديداً ثم احفظ.',
+          false
+        );
+        updateSaveButton();
+        syncDeleteButton();
+        drawSiblingsLayer(state.drillParentId);
+        if (state.drillParentId) {
+          loadPickLayer(state.level, state.drillParentId);
+        }
+        return false;
+      }
+      applyLoadedBoundaryFeature(match, false);
+      return true;
+    }
+
+    return fetch(getUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { ok: false }; })
+      .then(function (data) {
         if (seq !== boundarySeq || level !== state.level || entityId !== state.entityId) {
           return false;
         }
         removeCurrentLayer();
-        var match = (fc.features || []).find(function (f) {
-          var p = f.properties || {};
-          if (Number(p.entity_id) !== Number(state.entityId)) { return false; }
-          return !shouldSkipGridFeature(level, p);
-        });
-        if (!match) {
-          var dismissed = isGridDismissed(level, entityId);
-          setStatus(
-            dismissed
-              ? 'الشبكة محذوفة — ارسم مضلعاً جديداً ثم احفظ، أو اضغط «إعادة الشبكة».'
-              : 'لا توجد حدود محفوظة — ارسم مضلعاً جديداً ثم احفظ.',
-            false
-          );
-          updateSaveButton();
-          syncDeleteButton();
-          drawSiblingsLayer(state.drillParentId);
-          if (state.drillParentId) {
-            loadPickLayer(state.level, state.drillParentId);
-          }
-          return false;
+        if (data && data.ok && data.feature) {
+          applyLoadedBoundaryFeature(data.feature, data.source === 'database');
+          return true;
         }
-        if (match.properties) {
-          if (match.properties.code && codeIn) { codeIn.value = String(match.properties.code); }
-        }
-        if (colorIn) {
-          colorIn.value = defaultColorForProps(match.properties || {});
-        }
-        installCurrentLayer(match);
-        updateSaveButton();
-        syncDeleteButton();
-        setStatus('محمّل: ' + state.entityName + ' — يمكنك التحرير الآن.', false);
-        drawSiblingsLayer(state.drillParentId);
-        return true;
+        var listUrl = apiUrl('boundary_list', boundaryScopeParams(level, state.drillParentId));
+        return fetch(listUrl, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+          .then(function (r) { return r.ok ? r.json() : { features: [] }; })
+          .then(finishFromList);
       })
       .catch(function () {
         setStatus('تعذّر تحميل الحدود.', true);
@@ -1480,7 +1900,27 @@
       });
   }
 
+  function applyLoadedBoundaryFeature(match, fromDatabase) {
+    if (match.properties) {
+      if (match.properties.code && codeIn) { codeIn.value = String(match.properties.code); }
+    }
+    if (colorIn) {
+      colorIn.value = defaultColorForProps(match.properties || {});
+    }
+    installCurrentLayer(match);
+    updateSaveButton();
+    syncDeleteButton();
+    var srcHint = fromDatabase ? ' (من قاعدة البيانات)' : '';
+    setStatus('محمّل: ' + state.entityName + srcHint + ' — يمكنك التحرير الآن.', false);
+    drawSiblingsLayer(state.drillParentId);
+  }
+
   function installCurrentLayer(feature) {
+    if (state.currentLayer) {
+      try { state.currentLayer.pm.disable(); } catch (eRm) {}
+      try { map.removeLayer(state.currentLayer); } catch (eRm2) {}
+      state.currentLayer = null;
+    }
     var props = feature.properties || {};
     var isGrid = !!props.is_grid;
     state.currentIsGrid = isGrid;
@@ -1512,6 +1952,7 @@
     if (isGrid) {
       setStatus('شبكة مبدئية لـ "' + state.entityName + '" — عدّل المضلع ثم احفظ، أو احذف الشبكة لرسم جديد.', false);
     }
+    syncLabelMarkerFromFeature(feature);
     syncActionButtons();
     updateSaveButton();
   }
@@ -1522,12 +1963,21 @@
       try { map.removeLayer(state.currentLayer); } catch (e) {}
       state.currentLayer = null;
     }
+    removeLabelMarker();
+    clearContextLabelPins();
+    state.labelDirty = false;
     state.currentIsGrid = false;
     state.geometryDirty = false;
     refreshStats();
     syncActionButtons();
     updateSaveButton();
   }
+
+  map.on('zoomend moveend', function () {
+    if (state.labelMarker && state.labelMarker.bringToFront) {
+      state.labelMarker.bringToFront();
+    }
+  });
 
   /* New polygons drawn by Geoman become the current layer if no current layer exists. */
   map.on('pm:create', function (e) {
@@ -1544,6 +1994,13 @@
     e.layer.pm.enable({ allowSelfIntersection: false });
     e.layer.on('pm:edit pm:cut pm:rotateend', refreshStats);
     refreshStats();
+    if (labelPositionSupported()) {
+      var pos = boundaryLayerCenter(e.layer);
+      if (pos) {
+        installLabelMarker(pos.lat, pos.lng, (nameIn && nameIn.value) || state.entityName);
+        state.labelDirty = true;
+      }
+    }
     updateSaveButton();
     syncActionButtons();
     if (canCreateOnSave()) {
@@ -1572,6 +2029,9 @@
       state.entityId = 0;
       state.entityName = '';
       if (entitySel) { entitySel.value = ''; }
+      removeLabelMarker();
+      state.labelDirty = false;
+      syncLabelUi();
       return;
     }
     nameIn.value = props.name || '';
@@ -1593,6 +2053,7 @@
     fd.append('name', nameIn.value || '');
     fd.append('code', codeIn.value || '');
     fd.append('color', colorIn.value || '');
+    appendLabelCoordsToForm(fd);
     return fetch(apiUrl('boundary_save'), { method: 'POST', body: fd, credentials: 'same-origin' })
       .then(function (r) {
         return parseJsonResponse(r).then(function (data) {
@@ -1634,6 +2095,7 @@
     state.addNewMode = false;
     state.currentIsGrid = false;
     state.geometryDirty = false;
+    state.labelDirty = false;
     undismissGrid(state.level, state.entityId);
     syncDeleteButton();
     loadOverview();
@@ -1655,11 +2117,18 @@
 
   if (nameIn) {
     nameIn.addEventListener('input', function () {
+      refreshLabelMarkerText();
       updateSaveButton();
       syncAddChildUi();
       if (canCreateOnSave()) {
         setStatus('اضغط «حفظ» لإنشاء «' + (nameIn.value || '').trim() + '» وحفظ الحدود.', false);
       }
+    });
+  }
+
+  if (labelResetBtn) {
+    labelResetBtn.addEventListener('click', function () {
+      centerLabelOnBoundary();
     });
   }
 

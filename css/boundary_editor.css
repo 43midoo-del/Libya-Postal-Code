@@ -190,11 +190,92 @@ body.boundary-editor-body > .app-footer { display: none; }
   background: #06121f;
 }
 
+.be-map-layer-switch {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  left: auto;
+  z-index: 1200;
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.22rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.be-base-map-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+.be-base-map-row__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.01em;
+}
+.be-base-map-row__btns {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.22rem;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.32);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.be-base-map-btn {
+  appearance: none;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.34rem 0.55rem;
+  min-width: 4.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.25;
+  cursor: pointer;
+  color: #94a3b8;
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.be-map-layer-switch .be-base-map-btn {
+  min-width: 3.6rem;
+  padding-inline: 0.45rem;
+}
+.be-base-map-btn:hover {
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.42);
+  border-color: rgba(148, 163, 184, 0.14);
+}
+.be-base-map-btn:focus-visible {
+  outline: 2px solid rgba(103, 232, 249, 0.45);
+  outline-offset: 1px;
+}
+.be-base-map-btn.is-active {
+  color: #e0f2fe;
+  background: rgba(14, 116, 144, 0.22);
+  border-color: rgba(103, 232, 249, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.be-base-map-btn.is-active:hover {
+  background: rgba(14, 116, 144, 0.3);
+  border-color: rgba(103, 232, 249, 0.3);
+}
+
 #be-map {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  z-index: 1;
 }
 
 .be-status {
@@ -212,23 +293,48 @@ body.boundary-editor-body > .app-footer { display: none; }
 }
 .be-status.is-err { color: #fda4af; }
 
-.be-layer-toggles {
+.be-map-controls {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.5rem;
   margin: 0.75rem 0 0.5rem;
+  font-size: 0.82rem;
+}
+.be-map-controls__block {
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.45);
   border: 1px solid rgba(148, 163, 184, 0.16);
-  font-size: 0.82rem;
 }
-.be-layer-toggles label {
+.be-map-controls__block--base .be-base-map-row__btns {
+  margin-top: 0;
+}
+.be-layer-check[hidden] {
+  display: none;
+}
+.be-map-controls__label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+.be-layer-overview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.be-layer-check {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   cursor: pointer;
   color: #cbd5e1;
+  margin: 0;
+}
+.be-map-controls__block--overview[hidden] {
+  display: none;
 }
 
 /* Geoman draw controls in RTL — keep them LTR-oriented for icon clarity */
@@ -249,6 +355,94 @@ body.boundary-editor-body > .app-footer { display: none; }
   border: 1px solid rgba(15, 23, 42, 0.35);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   white-space: nowrap;
+}
+
+.be-label-pos {
+  margin-top: 0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+.be-label-pos__hint {
+  margin: 0.15rem 0 0.55rem;
+  line-height: 1.45;
+}
+.be-label-pos__reset {
+  width: 100%;
+  justify-content: center;
+}
+.be-label-pin-icon {
+  overflow: visible !important;
+  background: transparent !important;
+  border: none !important;
+  pointer-events: auto !important;
+}
+.leaflet-div-icon.be-label-pin-icon {
+  overflow: visible !important;
+}
+.leaflet-labelEdit-pane .leaflet-marker-icon.be-label-pin-icon {
+  overflow: visible !important;
+  pointer-events: auto !important;
+  background: transparent !important;
+  border: none !important;
+}
+.be-label-pin {
+  position: relative;
+  width: 0;
+  height: 0;
+  cursor: grab;
+  pointer-events: auto;
+}
+.be-label-pin--ctx {
+  cursor: default;
+  pointer-events: none;
+}
+.be-label-pin--ctx .be-label-pin__dot {
+  display: none;
+}
+.be-label-pin-icon--ctx .be-label-pin__text {
+  border-color: rgba(148, 163, 184, 0.55);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+.be-label-pin:active {
+  cursor: grabbing;
+}
+.be-label-pin__text {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate(-50%, calc(-100% - 10px));
+  display: inline-block;
+  padding: 0.28rem 0.52rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.96);
+  border: 2px solid #fde047;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65), 0 0 0 2px rgba(250, 204, 21, 0.35);
+  white-space: nowrap;
+  max-width: 12rem;
+  overflow: visible;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.be-label-pin--edit .be-label-pin__text {
+  pointer-events: auto;
+}
+.be-label-pin__dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: #fde047;
+  border: 2px solid #0f172a;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.65), 0 2px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
 }
 
 /* Responsive: collapse sidebar to top half on narrow screens */

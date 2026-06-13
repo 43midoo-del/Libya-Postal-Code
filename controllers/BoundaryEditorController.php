@@ -2,6 +2,7 @@
 /**
  * Admin Boundary Editor:
  *   - GET ?r=boundary_editor          → editor UI
+ *   - GET ?r=boundary_get              &level=&entity_id=  (saved geometry from DB)
  *   - GET ?r=boundary_list             &level=&parent_id=
  *   - GET ?r=boundary_entities         &level=&parent_id=     (drop-down feed)
  *   - POST ?r=boundary_save            (CSRF) — upsert (level, entity_id) → geojson
@@ -49,6 +50,7 @@ final class BoundaryEditorController extends BaseController
             'zoom'           => (int) $map['default_zoom'],
             'minZoom'        => (int) $map['min_zoom'],
             'maxZoom'        => (int) $map['max_zoom'],
+            'maxZoomSat'     => (int) ($map['max_zoom_satellite'] ?? 17),
             'appShellClass'  => 'app-shell--wide',
             'provinceColors' => Boundary::provinceColors(),
             'mapRegions'     => require dirname(__DIR__) . '/config/postal_map_regions.php',
@@ -221,13 +223,38 @@ final class BoundaryEditorController extends BaseController
         echo json_encode(['ok' => true] + $loc, JSON_UNESCAPED_UNICODE);
     }
 
+    public function apiGet(): void
+    {
+        $this->requireApiAnyRole(['admin', 'employee']);
+        header('Content-Type: application/json; charset=utf-8');
+        $level = (string) ($_GET['level'] ?? '');
+        $entityId = (int) ($_GET['entity_id'] ?? 0);
+        if (!in_array($level, Boundary::LEVELS, true) || $entityId < 1) {
+            echo json_encode(['ok' => false, 'message' => 'معاملات غير صالحة.'], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+        $feature = Boundary::asFeature($level, $entityId);
+        if ($feature === null) {
+            echo json_encode(['ok' => true, 'feature' => null, 'source' => null], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+        $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+        $props['name'] = $this->resolveEntityDisplayName($level, $entityId);
+        $feature['properties'] = $props;
+        echo json_encode(['ok' => true, 'feature' => $feature, 'source' => 'database'], JSON_UNESCAPED_UNICODE);
+    }
+
     public function apiList(): void
     {
         $this->requireApiAnyRole(['admin', 'employee']);
         header('Content-Type: application/json; charset=utf-8');
         $level = (string) ($_GET['level'] ?? 'region');
         $parentId = isset($_GET['parent_id']) && $_GET['parent_id'] !== '' ? (int) $_GET['parent_id'] : null;
-        $fc = Boundary::asFeatureCollection($level, $parentId);
+        $withinAreaId = $this->parseWithinAreaId();
+        $savedOnly = isset($_GET['saved_only']) && (string) $_GET['saved_only'] === '1';
+        $fc = Boundary::asFeatureCollection($level, $parentId, $withinAreaId);
         /* Always merge all three wilayah polygons — partial DB rows must not hide T/F. */
         if ($level === 'state') {
             $fc = $this->stateGeoJsonFallback();
@@ -237,14 +264,24 @@ final class BoundaryEditorController extends BaseController
         } elseif ($level === 'region' && empty($fc['features'])) {
             $fc = $this->regionGeoJsonFallback($parentId);
         }
-        if ($level === 'city' && $parentId !== null) {
+        if (!$savedOnly && $level === 'city' && $parentId !== null) {
             $fc = $this->cityListWithGrid($parentId);
         }
-        if ($level === 'area' && $parentId !== null) {
-            $fc = $this->areaListWithGrid($parentId);
+        if (!$savedOnly && $level === 'area' && $parentId !== null) {
+            $cityId = $this->resolveCityParentId($parentId);
+            if ($cityId !== null) {
+                $fc = $this->areaListWithGrid($cityId, $withinAreaId);
+            } else {
+                $fc = ['type' => 'FeatureCollection', 'features' => []];
+            }
         }
-        if ($level === 'street' && $parentId !== null) {
-            $fc = $this->streetListWithGrid($parentId);
+        if (!$savedOnly && $level === 'street' && $parentId !== null) {
+            $areaId = $this->resolveAreaParentId($parentId);
+            if ($areaId !== null) {
+                $fc = $this->streetListWithGrid($areaId);
+            } else {
+                $fc = ['type' => 'FeatureCollection', 'features' => []];
+            }
         }
         echo json_encode($fc, JSON_UNESCAPED_UNICODE);
     }
@@ -434,13 +471,7 @@ final class BoundaryEditorController extends BaseController
         foreach ($fallback['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
             if ($eid > 0 && isset($savedById[$eid])) {
-                $savedFeat = $savedById[$eid];
-                $savedGeom = is_array($savedFeat['geometry'] ?? null) ? $savedFeat['geometry'] : null;
-                if ($savedGeom !== null && !$this->geometrySpanTooLarge('region', $savedGeom)) {
-                    $out[] = $savedFeat;
-                } else {
-                    $out[] = $this->mergeGridFeatureMeta($feature, $savedFeat);
-                }
+                $out[] = $savedById[$eid];
                 $used[$eid] = true;
                 continue;
             }
@@ -464,23 +495,11 @@ final class BoundaryEditorController extends BaseController
     {
         $saved = Boundary::asFeatureCollection('city', $regionId);
         $grid = $this->cityGridFallback($regionId);
-        $gridById = [];
-        foreach ($grid['features'] as $feature) {
-            $gridById[(int) ($feature['properties']['entity_id'] ?? 0)] = $feature;
-        }
 
         $out = [];
         $used = [];
         foreach ($saved['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            $geom = is_array($feature['geometry'] ?? null) ? $feature['geometry'] : null;
-            if ($geom !== null && $this->geometrySpanTooLarge('city', $geom)) {
-                if ($eid > 0 && isset($gridById[$eid])) {
-                    $out[] = $this->mergeGridFeatureMeta($gridById[$eid], $feature);
-                    $used[$eid] = true;
-                }
-                continue;
-            }
             if ($eid > 0) {
                 $used[$eid] = true;
             }
@@ -497,24 +516,28 @@ final class BoundaryEditorController extends BaseController
     }
 
     /** @return array{type:string, features:list<array<string,mixed>>} */
-    private function areaListWithGrid(int $cityId): array
+    private function areaListWithGrid(int $cityId, ?int $withinAreaId = null): array
     {
-        $saved = Boundary::asFeatureCollection('area', $cityId);
-        $savedById = [];
+        $saved = Boundary::asFeatureCollection('area', $cityId, $withinAreaId);
+        $grid = $this->areaGridFallback($cityId, $withinAreaId);
+
+        $out = [];
+        $used = [];
         foreach ($saved['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
             if ($eid > 0) {
-                $savedById[$eid] = $feature;
+                $used[$eid] = true;
             }
+            $out[] = $feature;
         }
-        foreach ($this->areaGridFallback($cityId)['features'] as $feature) {
+        foreach ($grid['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            if ($eid > 0 && !isset($savedById[$eid])) {
-                $saved['features'][] = $feature;
+            if ($eid > 0 && !isset($used[$eid])) {
+                $out[] = $feature;
             }
         }
 
-        return $saved;
+        return ['type' => 'FeatureCollection', 'features' => $out];
     }
 
     /** @return array{type:string, features:list<array<string,mixed>>} */
@@ -565,21 +588,32 @@ final class BoundaryEditorController extends BaseController
         ?string $code,
         ?string $color,
         float $lat,
-        float $lng
+        float $lng,
+        ?int $withinAreaId = null
     ): array {
         $pdo = Database::getInstance()->getPdo();
-        $cityPolys = $this->cityBoundaryPolygons($cityId);
-        if ($cityPolys === null || $cityPolys === []) {
-            throw new RuntimeException('لا توجد حدود للمدينة الأب — ارسم حدود المدينة أولاً.');
-        }
-        if (!$this->pointInsidePolygonSets($lat, $lng, $cityPolys)) {
-            throw new RuntimeException('النقطة خارج حدود المدينة المختارة.');
+        if ($withinAreaId !== null && $withinAreaId > 0) {
+            $containerPolys = $this->areaBoundaryPolygons($withinAreaId);
+            if ($containerPolys === null || $containerPolys === []) {
+                throw new RuntimeException('لا توجد حدود للحي الأب — ارسم حدود الحي الرئيسي أولاً.');
+            }
+            if (!$this->pointInsidePolygonSets($lat, $lng, $containerPolys)) {
+                throw new RuntimeException('النقطة خارج حدود الحي الأب المختار.');
+            }
+        } else {
+            $containerPolys = $this->cityBoundaryPolygons($cityId);
+            if ($containerPolys === null || $containerPolys === []) {
+                throw new RuntimeException('لا توجد حدود للمدينة الأب — ارسم حدود المدينة أولاً.');
+            }
+            if (!$this->pointInsidePolygonSets($lat, $lng, $containerPolys)) {
+                throw new RuntimeException('النقطة خارج حدود المدينة المختارة.');
+            }
         }
 
-        $newId = Area::createWithCoords($name, $cityId, $lat, $lng, $code);
-        $siblings = $this->collectAreaSeedPoints($cityId, $newId);
+        $newId = Area::createWithCoords($name, $cityId, $lat, $lng, $code, 'neighborhood', $withinAreaId);
+        $siblings = $this->collectAreaSeedPoints($cityId, $newId, $withinAreaId);
         $point = ['entity_id' => $newId, 'name' => $name, 'lat' => $lat, 'lng' => $lng];
-        $feature = CityGrid::buildSingleCell($cityPolys, $point, $siblings, [
+        $feature = CityGrid::buildSingleCell($containerPolys, $point, $siblings, [
             'level'     => 'area',
             'parent_id' => $cityId,
         ]);
@@ -669,13 +703,22 @@ final class BoundaryEditorController extends BaseController
     /**
      * @return list<array{entity_id:int,name:string,lat:float,lng:float}>
      */
-    private function collectAreaSeedPoints(int $cityId, int $excludeId = 0): array
+    private function collectAreaSeedPoints(int $cityId, int $excludeId = 0, ?int $withinAreaId = null): array
     {
         $pdo = Database::getInstance()->getPdo();
-        $st = $pdo->prepare(
-            'SELECT id, name, lat, lng FROM areas WHERE city_id = :cid ORDER BY id ASC'
-        );
-        $st->execute(['cid' => $cityId]);
+        if ($withinAreaId !== null && $withinAreaId > 0) {
+            $st = $pdo->prepare(
+                'SELECT id, name, lat, lng FROM areas
+                 WHERE city_id = :cid AND parent_area_id = :paid ORDER BY id ASC'
+            );
+            $st->execute(['cid' => $cityId, 'paid' => $withinAreaId]);
+        } else {
+            $st = $pdo->prepare(
+                'SELECT id, name, lat, lng FROM areas
+                 WHERE city_id = :cid AND parent_area_id IS NULL ORDER BY id ASC'
+            );
+            $st->execute(['cid' => $cityId]);
+        }
         $out = [];
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
             $id = (int) ($row['id'] ?? 0);
@@ -779,7 +822,9 @@ final class BoundaryEditorController extends BaseController
         if ($cityId < 1) {
             return null;
         }
-        $grid = $this->areaGridFallback($cityId);
+        /* Use root grid only — areaGridFallback() calls subAreaGridFallback() which
+         * calls areaBoundaryPolygons() again and would recurse infinitely. */
+        $grid = $this->rootAreaGridFallback($cityId);
         foreach ($grid['features'] as $feature) {
             if (!is_array($feature)) {
                 continue;
@@ -791,6 +836,26 @@ final class BoundaryEditorController extends BaseController
             $geom = $feature['geometry'] ?? null;
             if (is_array($geom)) {
                 return $this->geometryToPolygonSets($geom);
+            }
+        }
+
+        /* Nested sub-area (parent_area_id set): derive cell from parent's sub-grid. */
+        $parentSt = $pdo->prepare('SELECT parent_area_id FROM areas WHERE id = :id LIMIT 1');
+        $parentSt->execute(['id' => $areaId]);
+        $parentAreaId = (int) ($parentSt->fetchColumn() ?: 0);
+        if ($parentAreaId > 0) {
+            foreach ($this->subAreaGridFallback($cityId, $parentAreaId)['features'] as $feature) {
+                if (!is_array($feature)) {
+                    continue;
+                }
+                $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+                if ((int) ($props['entity_id'] ?? 0) !== $areaId) {
+                    continue;
+                }
+                $geom = $feature['geometry'] ?? null;
+                if (is_array($geom)) {
+                    return $this->geometryToPolygonSets($geom);
+                }
             }
         }
 
@@ -932,13 +997,40 @@ final class BoundaryEditorController extends BaseController
     }
 
     /** @return array{type:string, features:list<array<string,mixed>>} */
-    private function areaGridFallback(int $cityId): array
+    private function areaGridFallback(int $cityId, ?int $withinAreaId = null): array
+    {
+        if ($withinAreaId !== null && $withinAreaId > 0) {
+            return $this->subAreaGridFallback($cityId, $withinAreaId);
+        }
+
+        $features = $this->rootAreaGridFallback($cityId)['features'];
+        $pdo = Database::getInstance()->getPdo();
+        $parentSt = $pdo->prepare(
+            'SELECT DISTINCT parent_area_id FROM areas
+             WHERE city_id = :cid AND parent_area_id IS NOT NULL'
+        );
+        $parentSt->execute(['cid' => $cityId]);
+        foreach ($parentSt->fetchAll(PDO::FETCH_COLUMN) ?: [] as $parentAreaId) {
+            $parentAreaId = (int) $parentAreaId;
+            if ($parentAreaId < 1) {
+                continue;
+            }
+            foreach ($this->subAreaGridFallback($cityId, $parentAreaId)['features'] as $feature) {
+                $features[] = $feature;
+            }
+        }
+
+        return ['type' => 'FeatureCollection', 'features' => $features];
+    }
+
+    /** @return array{type:string, features:list<array<string,mixed>>} */
+    private function rootAreaGridFallback(int $cityId): array
     {
         $pdo = Database::getInstance()->getPdo();
         $st = $pdo->prepare(
             'SELECT a.id, a.name, a.lat, a.lng
              FROM areas a
-             WHERE a.city_id = :cid
+             WHERE a.city_id = :cid AND a.parent_area_id IS NULL
              ORDER BY a.id ASC'
         );
         $st->execute(['cid' => $cityId]);
@@ -973,6 +1065,54 @@ final class BoundaryEditorController extends BaseController
         return [
             'type'     => 'FeatureCollection',
             'features' => CityGrid::buildFeatures($cityPolys, $areas, [
+                'level'     => 'area',
+                'parent_id' => $cityId,
+            ]),
+        ];
+    }
+
+    /** @return array{type:string, features:list<array<string,mixed>>} */
+    private function subAreaGridFallback(int $cityId, int $parentAreaId): array
+    {
+        $pdo = Database::getInstance()->getPdo();
+        $st = $pdo->prepare(
+            'SELECT a.id, a.name, a.lat, a.lng
+             FROM areas a
+             WHERE a.city_id = :cid AND a.parent_area_id = :paid
+             ORDER BY a.id ASC'
+        );
+        $st->execute(['cid' => $cityId, 'paid' => $parentAreaId]);
+        $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        if ($rows === []) {
+            return ['type' => 'FeatureCollection', 'features' => []];
+        }
+
+        $parentPolys = $this->areaBoundaryPolygons($parentAreaId);
+        if ($parentPolys === null || $parentPolys === []) {
+            return ['type' => 'FeatureCollection', 'features' => []];
+        }
+
+        $areas = [];
+        foreach ($rows as $row) {
+            $lat = $row['lat'] !== null ? (float) $row['lat'] : null;
+            $lng = $row['lng'] !== null ? (float) $row['lng'] : null;
+            if ($lat === null || $lng === null) {
+                continue;
+            }
+            $areas[] = [
+                'entity_id' => (int) $row['id'],
+                'name'      => (string) ($row['name'] ?? ''),
+                'lat'       => $lat,
+                'lng'       => $lng,
+            ];
+        }
+        if ($areas === []) {
+            return ['type' => 'FeatureCollection', 'features' => []];
+        }
+
+        return [
+            'type'     => 'FeatureCollection',
+            'features' => CityGrid::buildFeatures($parentPolys, $areas, [
                 'level'     => 'area',
                 'parent_id' => $cityId,
             ]),
@@ -1272,8 +1412,27 @@ final class BoundaryEditorController extends BaseController
         header('Content-Type: application/json; charset=utf-8');
         $level = (string) ($_GET['level'] ?? 'region');
         $parentId = isset($_GET['parent_id']) && $_GET['parent_id'] !== '' ? (int) $_GET['parent_id'] : null;
+        $withinAreaId = $level === 'area' ? $this->parseWithinAreaId() : null;
+        if ($level === 'area' && $parentId !== null && $parentId > 0 && $this->resolveCityParentId($parentId) === null) {
+            echo json_encode([
+                'ok'      => false,
+                'message' => 'معرّف الأب ليس مدينة — اختر مدينة من تبويب «مدينة» أولاً (لا تستخدم الشعبية).',
+                'rows'    => [],
+            ], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+        if ($level === 'street' && $parentId !== null && $parentId > 0 && $this->resolveAreaParentId($parentId) === null) {
+            echo json_encode([
+                'ok'      => false,
+                'message' => 'معرّف الأب ليس حيّاً — اختر حيّاً من تبويب «حي» أولاً.',
+                'rows'    => [],
+            ], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
         try {
-            $rows = $this->fetchEntityRows($level, $parentId);
+            $rows = $this->fetchEntityRows($level, $parentId, $withinAreaId);
         } catch (\Throwable $e) {
             http_response_code(500);
             echo json_encode([
@@ -1294,17 +1453,40 @@ final class BoundaryEditorController extends BaseController
                     ? (string) $r['color'] : null,
                 'parent_id'    => isset($r['parent_id']) && $r['parent_id'] !== null && $r['parent_id'] !== ''
                     ? (int) $r['parent_id'] : null,
-                'kind'         => $r['kind'] ?? null,
-                'has_boundary' => (bool) ((int) ($r['has_boundary'] ?? 0)),
+                'kind'           => $r['kind'] ?? null,
+                'has_boundary'   => (bool) ((int) ($r['has_boundary'] ?? 0)),
+                'parent_area_id' => isset($r['parent_area_id']) && $r['parent_area_id'] !== null && $r['parent_area_id'] !== ''
+                    ? (int) $r['parent_area_id'] : null,
+                'child_count'    => (int) ($r['child_count'] ?? 0),
             ];
         }
         echo json_encode(['ok' => true, 'level' => $level, 'rows' => $out], JSON_UNESCAPED_UNICODE);
     }
 
+    private function parseWithinAreaId(): ?int
+    {
+        if (!isset($_GET['within_area']) || $_GET['within_area'] === '') {
+            return null;
+        }
+        $id = (int) $_GET['within_area'];
+
+        return $id > 0 ? $id : null;
+    }
+
+    private function parsePostWithinAreaId(): ?int
+    {
+        if (!isset($_POST['within_area']) || $_POST['within_area'] === '') {
+            return null;
+        }
+        $id = (int) $_POST['within_area'];
+
+        return $id > 0 ? $id : null;
+    }
+
     /**
      * @return list<array<string,mixed>>
      */
-    private function fetchEntityRows(string $level, ?int $parentId): array
+    private function fetchEntityRows(string $level, ?int $parentId, ?int $withinAreaId = null): array
     {
         $pdo = Database::getInstance()->getPdo();
         $bCount = static function (string $lvl, string $idCol): string {
@@ -1312,6 +1494,23 @@ final class BoundaryEditorController extends BaseController
         };
 
         try {
+            if ($level === 'area') {
+                $cityId = $this->resolveCityParentId($parentId);
+
+                return $this->fetchAreaEntityRows($pdo, $cityId, $withinAreaId, $bCount);
+            }
+            if ($level === 'street') {
+                $areaId = $this->resolveAreaParentId($parentId);
+
+                return $this->runEntityQuery(
+                    $pdo,
+                    'SELECT s.id, s.name, s.code, s.area_id AS parent_id, ' . $bCount('street', 's.id') . '
+                     FROM streets s',
+                    's.area_id',
+                    $areaId
+                );
+            }
+
             return match ($level) {
                 'state' => $pdo->query(
                     'SELECT s.id, s.name, s.code, s.color, NULL AS parent_id, ' . $bCount('state', 's.id') . '
@@ -1331,28 +1530,69 @@ final class BoundaryEditorController extends BaseController
                     'c.region_id',
                     $parentId
                 ),
-                'area' => $this->runEntityQuery(
-                    $pdo,
-                    'SELECT a.id, a.name, a.code, a.city_id AS parent_id, a.kind, ' . $bCount('area', 'a.id') . '
-                     FROM areas a',
-                    'a.city_id',
-                    $parentId
-                ),
-                'street' => $this->runEntityQuery(
-                    $pdo,
-                    'SELECT s.id, s.name, s.code, s.area_id AS parent_id, ' . $bCount('street', 's.id') . '
-                     FROM streets s',
-                    's.area_id',
-                    $parentId
-                ),
                 default => [],
             };
         } catch (\Throwable $e) {
-            return $this->fetchEntityRowsFallback($level, $parentId, $e);
+            return $this->fetchEntityRowsFallback($level, $parentId, $e, $withinAreaId);
         }
     }
 
-    private function fetchEntityRowsFallback(string $level, ?int $parentId, \Throwable $prev): array
+    private function resolveCityParentId(?int $parentId): ?int
+    {
+        if ($parentId === null || $parentId < 1) {
+            return null;
+        }
+        $pdo = Database::getInstance()->getPdo();
+        $st = $pdo->prepare('SELECT id FROM cities WHERE id = :id LIMIT 1');
+        $st->execute(['id' => $parentId]);
+        if ($st->fetchColumn() === false) {
+            return null;
+        }
+
+        return $parentId;
+    }
+
+    private function resolveAreaParentId(?int $parentId): ?int
+    {
+        if ($parentId === null || $parentId < 1) {
+            return null;
+        }
+        $pdo = Database::getInstance()->getPdo();
+        $st = $pdo->prepare('SELECT id FROM areas WHERE id = :id LIMIT 1');
+        $st->execute(['id' => $parentId]);
+        if ($st->fetchColumn() === false) {
+            return null;
+        }
+
+        return $parentId;
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function fetchAreaEntityRows(PDO $pdo, ?int $cityId, ?int $withinAreaId, callable $bCount): array
+    {
+        $childCount = '(SELECT COUNT(*) FROM areas c WHERE c.parent_area_id = a.id) AS child_count';
+        if ($withinAreaId !== null && $withinAreaId > 0) {
+            $sql = 'SELECT a.id, a.name, a.code, a.city_id AS parent_id, a.kind, a.parent_area_id, '
+                . $bCount('area', 'a.id') . ', 0 AS child_count
+                 FROM areas a WHERE a.parent_area_id = :paid ORDER BY a.id ASC';
+            $st = $pdo->prepare($sql);
+            $st->execute(['paid' => $withinAreaId]);
+        } elseif ($cityId !== null && $cityId > 0) {
+            $sql = 'SELECT a.id, a.name, a.code, a.city_id AS parent_id, a.kind, a.parent_area_id, '
+                . $bCount('area', 'a.id') . ', ' . $childCount
+                . ' FROM areas a WHERE a.city_id = :cid ORDER BY a.id ASC';
+            $st = $pdo->prepare($sql);
+            $st->execute(['cid' => $cityId]);
+        } else {
+            return [];
+        }
+
+        return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    private function fetchEntityRowsFallback(string $level, ?int $parentId, \Throwable $prev, ?int $withinAreaId = null): array
     {
         $pdo = Database::getInstance()->getPdo();
 
@@ -1376,12 +1616,11 @@ final class BoundaryEditorController extends BaseController
                     'c.region_id',
                     $parentId
                 ),
-                'area' => $this->runEntityQuery(
+                'area' => $this->fetchAreaEntityRows(
                     $pdo,
-                    'SELECT a.id, a.name, a.city_id AS parent_id, 0 AS has_boundary
-                     FROM areas a',
-                    'a.city_id',
-                    $parentId
+                    $this->resolveCityParentId($parentId),
+                    $withinAreaId,
+                    static fn (): string => '0'
                 ),
                 'street' => $this->runEntityQuery(
                     $pdo,
@@ -1428,6 +1667,7 @@ final class BoundaryEditorController extends BaseController
             $code = isset($_POST['code']) ? (string) $_POST['code'] : null;
             $color = isset($_POST['color']) ? (string) $_POST['color'] : null;
             $name = isset($_POST['name']) ? trim((string) $_POST['name']) : null;
+            [$labelLat, $labelLng, $setLabel] = $this->parseLabelCoordsFromPost();
 
             /* Persist wilayah color before geometry — large MultiPolygons may fail to save. */
             if ($level === 'state' && $entityId > 0 && $color !== null && trim($color) !== '') {
@@ -1435,7 +1675,7 @@ final class BoundaryEditorController extends BaseController
             }
 
             if ($geojson === '') {
-                Boundary::saveMeta($level, $entityId, $code, $color, SessionAuth::userId());
+                Boundary::saveMeta($level, $entityId, $code, $color, SessionAuth::userId(), $labelLat, $labelLng, $setLabel);
                 $this->propagateEntityMeta($level, $entityId, $name, $code, $color);
                 echo json_encode([
                     'ok'      => true,
@@ -1446,7 +1686,7 @@ final class BoundaryEditorController extends BaseController
                 return;
             }
 
-            Boundary::save($level, $entityId, $geojson, $code, $color, SessionAuth::userId());
+            Boundary::save($level, $entityId, $geojson, $code, $color, SessionAuth::userId(), $labelLat, $labelLng, $setLabel);
 
             $this->propagateEntityMeta($level, $entityId, $name, $code, $color);
 
@@ -1511,8 +1751,9 @@ final class BoundaryEditorController extends BaseController
                 throw new RuntimeException('الموقع خارج نطاق ليبيا.');
             }
 
+            $withinAreaId = $level === 'area' ? $this->parsePostWithinAreaId() : null;
             $result = $level === 'area'
-                ? $this->createAreaWithGrid($parentId, $name, $code, $color, $lat, $lng)
+                ? $this->createAreaWithGrid($parentId, $name, $code, $color, $lat, $lng, $withinAreaId)
                 : $this->createStreetWithGrid($parentId, $name, $code, $color, $lat, $lng);
 
             echo json_encode(['ok' => true] + $result, JSON_UNESCAPED_UNICODE);
@@ -1546,11 +1787,8 @@ final class BoundaryEditorController extends BaseController
                     break;
                 case 'area':
                     if ($parentId < 1) { throw new RuntimeException('اختر المدينة أولاً.'); }
-                    $newId = Area::create($name, $parentId);
-                    /* persist code on the new area */
-                    if ($code !== null && $code !== '') {
-                        $this->propagateEntityMeta('area', $newId, null, $code, null);
-                    }
+                    $withinAreaId = $this->parsePostWithinAreaId();
+                    $newId = Area::createWithCoords($name, $parentId, null, null, $code, 'neighborhood', $withinAreaId);
                     break;
                 case 'street':
                     if ($parentId < 1) { throw new RuntimeException('اختر الحي أولاً.'); }
@@ -1650,6 +1888,30 @@ final class BoundaryEditorController extends BaseController
                 }
                 break;
         }
+    }
+
+    private function resolveEntityDisplayName(string $level, int $entityId): string
+    {
+        if ($entityId < 1 || !in_array($level, Boundary::LEVELS, true)) {
+            return '';
+        }
+        $pdo = Database::getInstance()->getPdo();
+        $sql = match ($level) {
+            'state'  => 'SELECT name FROM states WHERE id = :id LIMIT 1',
+            'region' => 'SELECT name FROM regions WHERE id = :id LIMIT 1',
+            'city'   => 'SELECT name FROM cities WHERE id = :id LIMIT 1',
+            'area'   => 'SELECT name FROM areas WHERE id = :id LIMIT 1',
+            'street' => 'SELECT name FROM streets WHERE id = :id LIMIT 1',
+            default  => '',
+        };
+        if ($sql === '') {
+            return '';
+        }
+        $st = $pdo->prepare($sql);
+        $st->execute(['id' => $entityId]);
+        $name = $st->fetchColumn();
+
+        return $name !== false ? (string) $name : '';
     }
 
     /**
@@ -1984,6 +2246,26 @@ final class BoundaryEditorController extends BaseController
             'zoom'   => $isPoint ? 11 : null,
             'bounds' => $box,
         ];
+    }
+
+    /** @return array{0:?float,1:?float,2:bool} */
+    private function parseLabelCoordsFromPost(): array
+    {
+        if (!isset($_POST['label_lat']) || !isset($_POST['label_lng'])) {
+            return [null, null, false];
+        }
+        $latRaw = trim((string) $_POST['label_lat']);
+        $lngRaw = trim((string) $_POST['label_lng']);
+        if ($latRaw === '' || $lngRaw === '') {
+            return [null, null, true];
+        }
+        $lat = (float) $latRaw;
+        $lng = (float) $lngRaw;
+        if (!GeoBounds::isInLibya($lat, $lng)) {
+            throw new RuntimeException('موقع اسم العنوان خارج نطاق ليبيا.');
+        }
+
+        return [$lat, $lng, true];
     }
 
     private function guardPost(): void

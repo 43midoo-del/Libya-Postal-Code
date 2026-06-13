@@ -26,7 +26,7 @@ use App\SessionAuth;
 $route = isset($_GET['r']) ? (string) $_GET['r'] : 'home';
 
 $jsonApiRoutes = [
-    'boundary_overview', 'boundary_list', 'boundary_entity_loc', 'boundary_entities',
+    'boundary_overview', 'boundary_list', 'boundary_get', 'boundary_entity_loc', 'boundary_entities',
     'boundary_save', 'boundary_delete', 'boundary_entity_create', 'boundary_entity_add_grid',
     'boundary_export', 'boundary_province_colors', 'addresses_json', 'api_shabiya_cities', 'address_city_blocks', 'address_api',
     'postal_lookup_api', 'tile_sync_status',
@@ -86,6 +86,7 @@ try {
         'boundary_editor' => (new BoundaryEditorController())->index(),
         'boundary_overview' => (new BoundaryEditorController())->apiOverview(),
         'boundary_list' => (new BoundaryEditorController())->apiList(),
+        'boundary_get' => (new BoundaryEditorController())->apiGet(),
         'boundary_entity_loc' => (new BoundaryEditorController())->apiEntityLoc(),
         'boundary_entities' => (new BoundaryEditorController())->apiEntities(),
         'boundary_save' => (new BoundaryEditorController())->apiSave(),

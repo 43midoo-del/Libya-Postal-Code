@@ -11,18 +11,21 @@
  * @var int $zoom
  * @var int $minZoom
  * @var int $maxZoom
+ * @var int $maxZoomSat
  */
 $flash = $flash ?? null;
 $bodyClass = 'boundary-editor-body';
 
 $extraHead  = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">';
 $extraHead .= '<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.css" crossorigin="anonymous">';
-$extraHead .= '<link rel="stylesheet" href="css/boundary_editor.css">';
+$projectRoot = dirname(__DIR__, 3);
+$beCss = 'css/boundary_editor.css';
+$beCssVer = is_file($projectRoot . '/' . $beCss) ? (string) filemtime($projectRoot . '/' . $beCss) : (string) time();
+$extraHead .= '<link rel="stylesheet" href="' . htmlspecialchars($beCss . '?v=' . $beCssVer, ENT_QUOTES, 'UTF-8') . '">';
 
 $extraFooter  = '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>';
 $extraFooter .= '<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.min.js" crossorigin="anonymous"></script>';
 $beJs = 'js/boundary/editor.js';
-$projectRoot = dirname(__DIR__, 3);
 $beJsVer = is_file($projectRoot . '/' . $beJs) ? (string) filemtime($projectRoot . '/' . $beJs) : (string) time();
 $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/index.php'));
 $lpApiBase = rtrim($scriptDir, '/') . '/index.php?r=';
@@ -107,10 +110,28 @@ $roleAr = match ($userRole) {
                     <label class="form-label" for="be-prop-color">اللون</label>
                     <input class="form-input" type="color" id="be-prop-color" value="#0ea5e9" disabled>
 
-                    <div class="be-layer-toggles" aria-label="طبقات الخريطة">
-                        <label><input type="checkbox" id="be-layer-states" checked> حدود الولايات</label>
-                        <label><input type="checkbox" id="be-layer-regions" checked> حدود الشعبيات</label>
-                        <label><input type="checkbox" id="be-layer-labels" checked> تسميات B1–F22</label>
+                    <div class="be-label-pos" id="be-label-pos-wrap" hidden>
+                        <span class="form-label">موقع اسم العنوان على الخريطة</span>
+                        <p class="be-label-pos__hint muted small">اسحب الاسم إلى المكان المناسب ثم اضغط «حفظ».</p>
+                        <button class="btn btn-ghost be-label-pos__reset" type="button" id="be-label-reset-btn">توسيط الاسم على الحد</button>
+                    </div>
+
+                    <div class="be-map-controls" aria-label="إعدادات الخريطة">
+                        <div class="be-map-controls__block be-map-controls__block--base">
+                            <span class="be-map-controls__label" id="be-map-controls-base-label">نوع الخريطة</span>
+                            <div class="be-base-map-row__btns" role="group" aria-labelledby="be-map-controls-base-label">
+                                <button type="button" class="be-base-map-btn" data-base="sat" aria-pressed="false">أقمار</button>
+                                <button type="button" class="be-base-map-btn is-active" data-base="osm" aria-pressed="true">تفصيلية</button>
+                            </div>
+                        </div>
+                        <div class="be-map-controls__block be-map-controls__block--overview" id="be-layer-overview-wrap">
+                            <span class="be-map-controls__label" id="be-map-controls-overview-label">طبقات التقسيم</span>
+                            <div class="be-layer-overview-list" role="group" aria-labelledby="be-map-controls-overview-label">
+                                <label class="be-layer-check be-layer-check--states"><input type="checkbox" id="be-layer-states" checked> حدود الولايات</label>
+                                <label class="be-layer-check be-layer-check--regions"><input type="checkbox" id="be-layer-regions" checked> حدود الشعبيات</label>
+                                <label class="be-layer-check be-layer-check--labels"><input type="checkbox" id="be-layer-labels" checked> تسميات B1–F22</label>
+                            </div>
+                        </div>
                     </div>
 
                     <dl class="be-stats">
@@ -129,6 +150,10 @@ $roleAr = match ($userRole) {
         </aside>
 
         <div class="be-map-wrap">
+            <div class="be-map-layer-switch" role="group" aria-label="نوع الخريطة">
+                <button type="button" id="be-map-btn-sat" class="be-base-map-btn" data-base="sat" aria-pressed="false" title="أقمار صناعية">أقمار</button>
+                <button type="button" id="be-map-btn-osm" class="be-base-map-btn is-active" data-base="osm" aria-pressed="true" title="خريطة تفصيلية">تفصيلية</button>
+            </div>
             <div
                 id="be-map"
                 class="map-canvas"
@@ -141,6 +166,7 @@ $roleAr = match ($userRole) {
                 data-zoom="<?= (int) $zoom ?>"
                 data-min-zoom="<?= (int) $minZoom ?>"
                 data-max-zoom="<?= (int) $maxZoom ?>"
+                data-max-zoom-sat="<?= (int) ($maxZoomSat ?? 17) ?>"
                 role="application"
                 aria-label="خريطة الرسم"
             ></div>

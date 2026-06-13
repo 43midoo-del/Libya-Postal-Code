@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/includes/bootstrap.php';
 
+use App\CityGrid;
 use App\Database;
 use App\GeoPoint;
 use App\Models\Area;
@@ -17,7 +18,6 @@ use App\Models\Boundary;
 use App\Models\Street;
 
 $dryRun = in_array('--dry-run', $argv, true);
-$cityId = 123;
 $regionId = 2;
 
 /** Derna urban core (REACH SBA / AAU Atlas centroids). */
@@ -25,8 +25,6 @@ const DERNA_SOUTH = 32.748;
 const DERNA_NORTH = 32.772;
 const DERNA_WEST  = 22.605;
 const DERNA_EAST  = 22.665;
-const AREA_CELL_HALF  = 0.006;
-const STREET_CELL_HALF = 0.0025;
 
 /**
  * Centroids from AAU Atlas + REACH Derna neighbourhood map (March 2023).
@@ -64,6 +62,53 @@ const KNOWN_STREETS = [
 function out(string $line): void
 {
     echo $line . PHP_EOL;
+}
+
+function resolveDernaCityId(PDO $pdo): int
+{
+    $st = $pdo->prepare(
+        'SELECT id FROM cities
+         WHERE region_id = :rid AND (name = :exact OR name LIKE :like)
+         ORDER BY CASE WHEN name = :exact2 THEN 0 ELSE 1 END, id ASC
+         LIMIT 1'
+    );
+    $st->execute([
+        'rid'    => 2,
+        'exact'  => 'درنة',
+        'exact2' => 'درنة',
+        'like'   => '%درنة%',
+    ]);
+    $id = (int) ($st->fetchColumn() ?: 0);
+    if ($id < 1) {
+        throw new RuntimeException('City «درنة» not found in region B2.');
+    }
+
+    return $id;
+}
+
+/** @return array<int, array<int, array<int, array<int, float>>>> */
+function geomToPolySets(array $geom): array
+{
+    $type = (string) ($geom['type'] ?? '');
+    $coords = $geom['coordinates'] ?? null;
+    if (!is_array($coords)) {
+        return [];
+    }
+    if ($type === 'Polygon') {
+        return [$coords];
+    }
+    if ($type === 'MultiPolygon') {
+        $out = [];
+        foreach ($coords as $poly) {
+            if (is_array($poly)) {
+                $out[] = $poly;
+            }
+        }
+
+        return $out;
+    }
+
+    return [];
 }
 
 function pointInRing(array $ring, float $lat, float $lng): bool
@@ -144,21 +189,26 @@ function httpGetJson(string $url, int $sleepMs = 1100): ?array
 function fetchDernaCityPolygon(): ?array
 {
     $q = http_build_query([
-        'city'              => 'Derna',
-        'country'           => 'Libya',
-        'format'            => 'json',
-        'polygon_geojson'   => 1,
-        'limit'             => 1,
+        'city'            => 'Derna',
+        'country'         => 'Libya',
+        'format'          => 'json',
+        'polygon_geojson' => 1,
+        'limit'           => 1,
     ]);
     $rows = httpGetJson('https://nominatim.openstreetmap.org/search?' . $q, 0);
     if (!$rows || !isset($rows[0]['geojson'])) {
         return null;
     }
     $gj = $rows[0]['geojson'];
-    if (!is_array($gj) || ($gj['type'] ?? '') !== 'Polygon') {
+    if (!is_array($gj)) {
         return null;
     }
-    return $gj;
+    $type = (string) ($gj['type'] ?? '');
+    if ($type === 'Polygon' || $type === 'MultiPolygon') {
+        return $gj;
+    }
+
+    return null;
 }
 
 function nominatimLocate(array $queries, array $cityRing): ?array
@@ -260,28 +310,48 @@ function fetchOsmNeighborhoods(): array
 function isUrbanStreetName(string $name, array $tags): bool
 {
     $hw = strtolower((string) ($tags['highway'] ?? ''));
-    if (in_array($hw, ['motorway', 'trunk', 'motorway_link', 'trunk_link'], true)) {
+    if (in_array($hw, ['motorway', 'trunk', 'motorway_link', 'trunk_link', 'footway', 'path', 'steps', 'cycleway'], true)) {
         return false;
     }
     $n = mb_strtolower(trim($name));
-    if ($n === '' || mb_strlen($n) < 4) {
+    if ($n === '' || mb_strlen($n) < 3) {
         return false;
     }
     if (preg_match('/شركة|company|matrix|ماتركس/u', $n)) {
         return false;
     }
-    if (preg_match('/طبرق|tobruk|القبة|qubbah|طريق\s*درنة/u', $n) && !preg_match('/^شارع/u', $n)) {
+    if (preg_match('/^(طريق|road)\s*(طبرق|tobruk|القبة|qubbah)/u', $n)) {
         return false;
     }
-    return (bool) preg_match('/^شارع|^\d|street|st\.|road|طريق/u', $n)
-        || str_contains($n, 'شارع')
-        || str_contains($n, 'street');
+    if (preg_match('/طبرق|tobruk|القبة|qubbah|البيضاء|al[- ]?bayda|bayda.*derna|derna.*qubbah|درنة.*طبرق|درنة.*القبة|قبة.*درنة/u', $n)) {
+        return false;
+    }
+
+    return true;
 }
 
-function fetchOsmStreets(): array
+function fetchOsmStreets(?array $cityGeom = null): array
 {
-    $q = '[out:json][timeout:120];way["highway"~"^(residential|living_street|tertiary|secondary|primary|unclassified|service)$"]["name"]('
-        . DERNA_SOUTH . ',' . DERNA_WEST . ',' . DERNA_NORTH . ',' . DERNA_EAST
+    $south = DERNA_SOUTH;
+    $west = DERNA_WEST;
+    $north = DERNA_NORTH;
+    $east = DERNA_EAST;
+    if ($cityGeom !== null) {
+        $sets = geomToPolySets($cityGeom);
+        foreach ($sets as $poly) {
+            $ring = $poly[0] ?? [];
+            foreach ($ring as $pt) {
+                $lng = (float) ($pt[0] ?? 0);
+                $lat = (float) ($pt[1] ?? 0);
+                $south = min($south, $lat);
+                $north = max($north, $lat);
+                $west = min($west, $lng);
+                $east = max($east, $lng);
+            }
+        }
+    }
+    $q = '[out:json][timeout:120];way["highway"]["name"]('
+        . $south . ',' . $west . ',' . $north . ',' . $east
         . ');out center tags;';
     $data = overpassQuery($q);
     if ($data === null) {
@@ -360,68 +430,121 @@ function buildUrbanEnvelope(array $neighborhoods, float $pad = 0.005): array
     ];
 }
 
-function buildFixedSquareGeometry(float $lat, float $lng, float $halfDeg): array
+function pointInsideCity(float $lat, float $lng, array $cityPolySets): bool
 {
-    return [
-        'type'        => 'Polygon',
-        'coordinates' => [[
-            [$lng - $halfDeg, $lat - $halfDeg],
-            [$lng + $halfDeg, $lat - $halfDeg],
-            [$lng + $halfDeg, $lat + $halfDeg],
-            [$lng - $halfDeg, $lat + $halfDeg],
-            [$lng - $halfDeg, $lat - $halfDeg],
-        ]],
-    ];
-}
+    foreach ($cityPolySets as $poly) {
+        if (GeoPoint::pointInPolygon($lat, $lng, $poly)) {
+            return true;
+        }
+    }
 
-function pointInsideUrban(float $lat, float $lng): bool
-{
     return $lat >= DERNA_SOUTH && $lat <= DERNA_NORTH && $lng >= DERNA_WEST && $lng <= DERNA_EAST;
 }
 
-function saveFixedAreaGrids(array $areaRows): int
+/**
+ * @param array<int, array<int, array<int, array<int, float>>>> $cityPolySets
+ * @param list<array{id:int,name:string,code:?string,lat:float,lng:float}> $areaRows
+ */
+function saveVoronoiAreaGrids(int $cityId, array $cityPolySets, array $areaRows): int
 {
-    $saved = 0;
+    $points = [];
+    $codes = [];
     foreach ($areaRows as $row) {
         if ($row['lat'] === null || $row['lng'] === null) {
             continue;
         }
         $lat = (float) $row['lat'];
         $lng = (float) $row['lng'];
-        if (!pointInsideUrban($lat, $lng)) {
+        if (!pointInsideCity($lat, $lng, $cityPolySets)) {
             continue;
         }
-        $geom = buildFixedSquareGeometry($lat, $lng, AREA_CELL_HALF);
+        $id = (int) $row['id'];
+        $points[] = [
+            'entity_id' => $id,
+            'name'      => (string) ($row['name'] ?? ''),
+            'lat'       => $lat,
+            'lng'       => $lng,
+        ];
+        $codes[$id] = $row['code'] ?? null;
+    }
+    if ($points === []) {
+        return 0;
+    }
+
+    $features = CityGrid::buildFeatures($cityPolySets, $points, [
+        'level'     => 'area',
+        'parent_id' => $cityId,
+    ]);
+    $saved = 0;
+    foreach ($features as $feature) {
+        $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+        $geom = $feature['geometry'] ?? null;
+        if (!is_array($geom)) {
+            continue;
+        }
+        $entityId = (int) ($props['entity_id'] ?? 0);
+        if ($entityId < 1) {
+            continue;
+        }
         Boundary::save(
             'area',
-            (int) $row['id'],
+            $entityId,
             json_encode($geom, JSON_UNESCAPED_UNICODE),
-            $row['code'] ?? null,
+            $codes[$entityId] ?? null,
             null,
             null
         );
         $saved++;
     }
+
     return $saved;
 }
 
-function saveFixedStreetGrids(PDO $pdo, array $streetCoords): int
+/**
+ * @param array<int, list<array{entity_id:int,name:string,lat:float,lng:float}>> $streetsByArea
+ * @param array<int, array<int, array<int, array<int, float>>>> $areaPolySets
+ */
+function saveVoronoiStreetGrids(PDO $pdo, array $streetsByArea, array $areaPolySets): int
 {
     $saved = 0;
     $codeSt = $pdo->prepare('SELECT code FROM streets WHERE id = :id LIMIT 1');
-    foreach ($streetCoords as $streetId => $cent) {
-        $lat = (float) $cent['lat'];
-        $lng = (float) $cent['lng'];
-        if (!pointInsideUrban($lat, $lng)) {
+    foreach ($streetsByArea as $areaId => $points) {
+        if ($points === []) {
             continue;
         }
-        $codeSt->execute(['id' => (int) $streetId]);
-        $code = $codeSt->fetchColumn();
-        $code = $code !== false ? (string) $code : null;
-        $geom = buildFixedSquareGeometry($lat, $lng, STREET_CELL_HALF);
-        Boundary::save('street', (int) $streetId, json_encode($geom, JSON_UNESCAPED_UNICODE), $code, null, null);
-        $saved++;
+        $container = $areaPolySets[$areaId] ?? null;
+        if ($container === null || $container === []) {
+            continue;
+        }
+        $features = CityGrid::buildFeatures($container, $points, [
+            'level'     => 'street',
+            'parent_id' => $areaId,
+        ]);
+        foreach ($features as $feature) {
+            $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+            $geom = $feature['geometry'] ?? null;
+            if (!is_array($geom)) {
+                continue;
+            }
+            $streetId = (int) ($props['entity_id'] ?? 0);
+            if ($streetId < 1) {
+                continue;
+            }
+            $codeSt->execute(['id' => $streetId]);
+            $code = $codeSt->fetchColumn();
+            $code = $code !== false ? (string) $code : null;
+            Boundary::save(
+                'street',
+                $streetId,
+                json_encode($geom, JSON_UNESCAPED_UNICODE),
+                $code,
+                null,
+                null
+            );
+            $saved++;
+        }
     }
+
     return $saved;
 }
 
@@ -442,10 +565,16 @@ foreach (NEIGHBORHOOD_SEEDS as $seed) {
     out('  [ok] ' . $seed['name'] . ' → ' . round($lat, 5) . ',' . round($lng, 5));
 }
 
-$cityGeom = buildUrbanEnvelope(array_values($neighborhoods));
-out('Urban envelope: lat ' . DERNA_SOUTH . '–' . DERNA_NORTH . ', lng ' . DERNA_WEST . '–' . DERNA_EAST);
+$cityGeom = fetchDernaCityPolygon();
+if ($cityGeom !== null) {
+    out('City boundary: OSM/Nominatim polygon (' . count($cityGeom['coordinates'][0] ?? []) . ' vertices).');
+} else {
+    $cityGeom = buildUrbanEnvelope(array_values($neighborhoods));
+    out('City boundary: urban envelope fallback (lat ' . DERNA_SOUTH . '–' . DERNA_NORTH . ', lng ' . DERNA_WEST . '–' . DERNA_EAST . ').');
+}
+$cityPolySets = geomToPolySets($cityGeom);
 
-$osmStreets = fetchOsmStreets();
+$osmStreets = fetchOsmStreets($cityGeom);
 out('OSM streets (extra): ' . count($osmStreets));
 
 if ($neighborhoods === []) {
@@ -470,14 +599,17 @@ if ($dryRun) {
 }
 
 $pdo = Database::getInstance()->getPdo();
+$cityId = resolveDernaCityId($pdo);
+out('Target city: #' . $cityId);
+
 $pdo->beginTransaction();
 try {
     Boundary::save('city', $cityId, json_encode($cityGeom, JSON_UNESCAPED_UNICODE), null, null, null);
-    out('Saved urban city envelope.');
+    out('Saved city boundary.');
 
     $areaByName = [];
-    /** @var array<int, array{lat:float,lng:float}> $streetCoords */
-    $streetCoords = [];
+    /** @var array<int, list<array{entity_id:int,name:string,lat:float,lng:float}>> $streetsByArea */
+    $streetsByArea = [];
     $stExist = $pdo->prepare('SELECT id, name, code, lat, lng FROM areas WHERE city_id = :cid');
     $stExist->execute(['cid' => $cityId]);
     foreach ($stExist->fetchAll(PDO::FETCH_ASSOC) as $row) {
@@ -508,8 +640,24 @@ try {
     }
 
     $areaRows = array_values($areaByName);
-    $areaSaved = saveFixedAreaGrids($areaRows);
-    out('Area grid cells saved: ' . $areaSaved);
+    $areaSaved = saveVoronoiAreaGrids($cityId, $cityPolySets, $areaRows);
+    out('Area Voronoi cells saved: ' . $areaSaved);
+
+    $areaPolySets = [];
+    foreach ($areaRows as $row) {
+        $saved = Boundary::find('area', (int) $row['id']);
+        if ($saved === null) {
+            continue;
+        }
+        $geom = json_decode($saved['geojson'], true);
+        if (!is_array($geom)) {
+            continue;
+        }
+        $sets = geomToPolySets($geom);
+        if ($sets !== []) {
+            $areaPolySets[(int) $row['id']] = $sets;
+        }
+    }
 
     $pdo->prepare('DELETE FROM streets WHERE area_id IN (SELECT id FROM areas WHERE city_id = :cid)')
         ->execute(['cid' => $cityId]);
@@ -537,19 +685,29 @@ try {
     }
 
     foreach ($allStreets as $s) {
-        $aid = nearestAreaId((float) $s['lat'], (float) $s['lng'], $areaRows);
+        $lat = (float) $s['lat'];
+        $lng = (float) $s['lng'];
+        if (!pointInsideCity($lat, $lng, $cityPolySets)) {
+            continue;
+        }
+        $aid = nearestAreaId($lat, $lng, $areaRows);
         if ($aid < 1) {
             continue;
         }
         $sid = Street::create($s['name'], $aid, $s['code'], null);
-        $streetCoords[$sid] = ['lat' => (float) $s['lat'], 'lng' => (float) $s['lng']];
+        $streetsByArea[$aid][] = [
+            'entity_id' => $sid,
+            'name'      => $s['name'],
+            'lat'       => (float) $s['lat'],
+            'lng'       => (float) $s['lng'],
+        ];
         $streetCount++;
     }
 
     $stExist->execute(['cid' => $cityId]);
     $areaRows = $stExist->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    $streetGrids = saveFixedStreetGrids($pdo, $streetCoords);
-    out('Street grid cells saved: ' . $streetGrids);
+    $streetGrids = saveVoronoiStreetGrids($pdo, $streetsByArea, $areaPolySets);
+    out('Street Voronoi cells saved: ' . $streetGrids);
 
     $pdo->commit();
     out('Done. City #' . $cityId . ' — areas: ' . count($areaRows) . ', new streets: ' . $streetCount);

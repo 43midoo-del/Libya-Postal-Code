@@ -8,3 +8,4 @@
 | [ar/implementation-memo.md](ar/implementation-memo.md) | مذكرة تنفيذ تفصيلية (عربي) |
 | [ar/project-manager-report.md](ar/project-manager-report.md) | تقرير شامل لمدير المشروع |
 | [ar/report-summary.md](ar/report-summary.md) | تقرير مختصر |
+| [ar/graduation-thesis.md](ar/graduation-thesis.md) | **بحث التخرج الكامل** (عربي) |

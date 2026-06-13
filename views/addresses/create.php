@@ -134,6 +134,7 @@ $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/province_co
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/core.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/labels.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/shabiyat.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
+$extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/zoom-nav.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/parcel.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/addresses/form.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/addresses/save.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
@@ -244,7 +245,6 @@ $csrf = \App\Csrf::getToken();
                         <select class="form-input form-input--mgr form-input--mgr-tight" id="addr-neighborhood" autocomplete="off">
                             <option value="">— اختر الحي أو الشارع —</option>
                         </select>
-                        <span class="field-help muted">تُحمَّل من محرر الحدود بعد اختيار المدينة</span>
                     </div>
                     <input type="hidden" name="pc_sector" id="pc_sector" value="S">
                     <div class="addr-form__row">
@@ -269,13 +269,16 @@ $csrf = \App\Csrf::getToken();
                             <input class="form-input form-input--mgr form-input--mgr-tight" type="text" name="holder_name" id="holder_name" maxlength="200" placeholder="اختياري">
                         </div>
                     </div>
-
-                    <div class="addr-form__actions addr-form__actions--mgr addr-form__actions--compact addr-form__actions--split">
-                        <button class="btn btn--reset btn--compact btn--pill" type="button" id="btn-reset-entries">إعادة</button>
-                        <button class="btn btn--save-new btn--compact btn--pill btn--primary-glow" type="button" id="btn-add-save">حفظ العنوان</button>
-                    </div>
                 </form>
                 </div>
+
+                <?php if ($editRow === null): ?>
+                <div class="addr-sidebar__form-actions addr-form__actions addr-form__actions--mgr addr-form__actions--compact addr-form__actions--split">
+                    <button class="btn btn--reset btn--compact btn--pill" type="button" id="btn-reset-entries">إعادة</button>
+                    <button class="btn btn--save-new btn--compact btn--pill btn--primary-glow" type="button" id="btn-add-save">حفظ العنوان</button>
+                </div>
+                <?php endif; ?>
+
                 <input type="hidden" name="map_lat" id="map-lat" value="" form="addr-new-form">
                 <input type="hidden" name="map_lng" id="map-lng" value="" form="addr-new-form">
 
@@ -402,7 +405,7 @@ $csrf = \App\Csrf::getToken();
             <div class="gis-toolbox-shell" id="gis-toolbox-shell">
             <aside class="gis-toolbox gis-toolbox--modern gis-toolbox--compact gis-toolbox--parcel<?= $editRow !== null ? ' gis-toolbox--readonly' : '' ?>" dir="rtl" aria-label="رسم حدود القطعة">
                 <div class="gis-toolbox__header">
-                    <h3 class="gis-toolbox__title">حدود القطعة على الخريطة</h3>
+                    <h3 class="gis-toolbox__title">إدارة الحدود</h3>
                     <button type="button" id="btn-gis-toolbox-hide" class="gis-toolbox-toggle gis-toolbox-toggle--hide" aria-label="إخفاء اللوحة" title="إخفاء">
                         <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
                     </button>
@@ -431,6 +434,8 @@ $csrf = \App\Csrf::getToken();
                 </fieldset>
                 <div class="gis-layer-toggles gis-layer-toggles--tight">
                     <label><input type="checkbox" id="layer-labels" checked> تسميات B1–F22</label>
+                    <label><input type="checkbox" id="layer-entity-labels" checked> تسميات الكيانات</label>
+                    <label><input type="checkbox" id="layer-boundaries" checked> الحدود والشبكات</label>
                 </div>
             </aside>
             </div>
@@ -439,10 +444,9 @@ $csrf = \App\Csrf::getToken();
             </div>
 
         <footer class="addr-dashboard-footer addr-dashboard-footer--modern" dir="rtl">
-            <a class="btn btn--exit btn--pill-footer" href="index.php?r=dashboard">اللوحة</a>
+            <a class="btn btn--exit btn--pill-footer" href="index.php?r=dashboard">لوحة التحكم</a>
             <a class="btn btn--scene btn--pill-footer btn--footer-soft" href="index.php?r=logout">تسجيل خروج</a>
             <button type="button" class="btn btn--scene btn--pill-footer" id="btn-new-scene">مشهد جديد</button>
-            <button type="button" class="btn btn--scene btn--pill-footer" id="btn-save-settings">حفظ الإعدادات</button>
             <button type="button" class="btn btn--scene btn--pill-footer btn--footer-soft" id="btn-export-png">تصدير PNG</button>
         </footer>
     </div>
