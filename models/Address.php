@@ -37,6 +37,66 @@ final class Address
     }
 
     /**
+     * Split stored address text into hierarchy parts for display.
+     *
+     * New saves store locality as «مدينة/منطقة | حي» (see `buildLocality` in form.js).
+     * Legacy rows may hold a single district label in `locality`.
+     *
+     * @param array{wilayah?: string|null, shabiya?: string|null, locality?: string|null} $row
+     * @return array{wilayah: string, shabiya: string, city: string, region: string, hood: string}
+     */
+    public static function locationParts(array $row): array
+    {
+        $wilayahKey = trim((string) ($row['wilayah'] ?? ''));
+        $wilayah = $wilayahKey !== '' ? LibyaAdmin::wilayahLabel($wilayahKey) : '';
+        $shabiya = trim((string) ($row['shabiya'] ?? ''));
+        $locality = trim((string) ($row['locality'] ?? ''));
+
+        $city = $shabiya;
+        $region = '';
+        $hood = '';
+
+        if ($locality !== '' && str_contains($locality, ' | ')) {
+            $bits = explode(' | ', $locality, 2);
+            $region = trim($bits[0]);
+            $hood = trim($bits[1] ?? '');
+        } elseif ($locality !== '') {
+            $region = $locality;
+        }
+
+        return [
+            'wilayah' => $wilayah,
+            'shabiya' => $shabiya,
+            'city'    => $city,
+            'region'  => $region,
+            'hood'    => $hood,
+        ];
+    }
+
+    /**
+     * Sequential place label: ولاية / شعبية / مدينة / منطقة / حي.
+     *
+     * @param array{wilayah?: string|null, shabiya?: string|null, locality?: string|null} $row
+     */
+    public static function formatPlaceSequence(array $row): string
+    {
+        $p = self::locationParts($row);
+        $segments = [];
+        foreach (['wilayah', 'shabiya', 'city', 'region', 'hood'] as $key) {
+            $value = trim($p[$key]);
+            if ($value === '') {
+                continue;
+            }
+            if ($segments !== [] && end($segments) === $value) {
+                continue;
+            }
+            $segments[] = $value;
+        }
+
+        return $segments === [] ? '—' : implode(' / ', $segments);
+    }
+
+    /**
      * Compute non-blocking spatial warnings for a (lat,lng) about to be saved
      * under a given (province, pcArea, shabiya). Returns an array of Arabic
      * messages — empty array if everything checks out (or data is missing).
@@ -63,6 +123,107 @@ final class Address
     }
 
     /**
+     * Non-blocking duplicate warnings within the same hood (locality): flags when the
+     * new point falls inside an existing parcel, when an existing point falls inside the
+     * new parcel, or when the new parcel overlaps an existing parcel. Scope is limited to
+     * addresses sharing the same shabiya + locality (e.g. «درنة | الجبيلة»).
+     *
+     * @return string[]
+     */
+    private static function duplicateWarnings(
+        ?string $shabiya,
+        ?string $locality,
+        float $lat,
+        float $lng,
+        ?string $parcelGeojson,
+        int $excludeId = 0
+    ): array {
+        $shabiya  = $shabiya !== null ? trim($shabiya) : '';
+        $locality = $locality !== null ? trim($locality) : '';
+        if ($shabiya === '' || $locality === '' || !str_contains($locality, ' | ')) {
+            return [];
+        }
+
+        try {
+            $pdo = Database::getInstance()->getPdo();
+            if ($excludeId > 0) {
+                $st = $pdo->prepare(
+                    'SELECT `latitude`, `longitude`, `parcel_geojson`
+                     FROM `addresses`
+                     WHERE `shabiya` = :sh AND `locality` = :loc AND `id` != :exid
+                     LIMIT 1000'
+                );
+                $st->execute(['sh' => $shabiya, 'loc' => $locality, 'exid' => $excludeId]);
+            } else {
+                $st = $pdo->prepare(
+                    'SELECT `latitude`, `longitude`, `parcel_geojson`
+                     FROM `addresses`
+                     WHERE `shabiya` = :sh AND `locality` = :loc
+                     LIMIT 1000'
+                );
+                $st->execute(['sh' => $shabiya, 'loc' => $locality]);
+            }
+            $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable) {
+            return [];
+        }
+
+        $newPolys = $parcelGeojson !== null && $parcelGeojson !== ''
+            ? GeoPoint::polygonsFromGeoJson($parcelGeojson)
+            : [];
+
+        $warnings = [];
+        $pointFlagged = false;
+        $parcelFlagged = false;
+
+        foreach ($rows as $row) {
+            $exLat = isset($row['latitude']) ? (float) $row['latitude'] : null;
+            $exLng = isset($row['longitude']) ? (float) $row['longitude'] : null;
+            $exGj  = isset($row['parcel_geojson']) ? (string) $row['parcel_geojson'] : '';
+            $exPolys = $exGj !== '' ? GeoPoint::polygonsFromGeoJson($exGj) : [];
+
+            if (!$pointFlagged && $exPolys !== []) {
+                foreach ($exPolys as $poly) {
+                    if (GeoPoint::pointInPolygon($lat, $lng, $poly)) {
+                        $warnings[] = 'تحذير: الموقع المُحدّد يقع داخل حدود عقار مسجّل مسبقاً في نفس الحي.';
+                        $pointFlagged = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$parcelFlagged && $newPolys !== []) {
+                if ($exLat !== null && $exLng !== null) {
+                    foreach ($newPolys as $np) {
+                        if (GeoPoint::pointInPolygon($exLat, $exLng, $np)) {
+                            $warnings[] = 'تحذير: حدود الأرض المرسومة تضمّ موقع عقار مسجّل مسبقاً في نفس الحي.';
+                            $parcelFlagged = true;
+                            break;
+                        }
+                    }
+                }
+                if (!$parcelFlagged && $exPolys !== []) {
+                    foreach ($newPolys as $np) {
+                        foreach ($exPolys as $ep) {
+                            if (GeoPoint::polygonsOverlap($np, $ep)) {
+                                $warnings[] = 'تحذير: حدود الأرض المرسومة تتداخل مع حدود عقار مسجّل مسبقاً في نفس الحي.';
+                                $parcelFlagged = true;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if ($pointFlagged && ($parcelFlagged || $newPolys === [])) {
+                break;
+            }
+        }
+
+        return $warnings;
+    }
+
+    /**
      * @return array{postalCode: string, id: int, warnings: string[]}
      */
     public static function create(
@@ -79,7 +240,9 @@ final class Address
         string $pcSector,
         ?string $shabiya,
         ?string $locality,
-        ?string $streetNumber
+        ?string $streetNumber,
+        ?string $parcelGeojson = null,
+        ?string $parcelDesc = null
     ): array {
         $holderName = $holderName === null ? '' : trim($holderName);
         if (strlen($holderName) > 200) {
@@ -109,6 +272,18 @@ final class Address
             throw new RuntimeException('الإحداثيّات خارج نطاق ليبيا في الإعدادات الحالية. اختر موقعاً داخل الصندوق على الخريطة.');
         }
         $warnings = self::spatialWarnings($province, $pcArea, $latitude, $longitude);
+        $parcelGeojson = self::normalizeParcelGeojson($parcelGeojson);
+        $parcelDesc    = self::normalizeParcelDesc($parcelDesc);
+        $dupWarnings = self::duplicateWarnings(
+            $shabiya === '' ? null : $shabiya,
+            $locality === '' ? null : $locality,
+            $latitude,
+            $longitude,
+            $parcelGeojson
+        );
+        if ($dupWarnings !== []) {
+            $warnings = array_merge($warnings, $dupWarnings);
+        }
         $pdo = Database::getInstance()->getPdo();
         $id     = 0;
         $postal = null;
@@ -123,12 +298,14 @@ final class Address
                     `owner_name`, `type`, `latitude`, `longitude`, `postal_code`,
                     `pc_province`, `pc_area`, `pc_city`, `pc_sector`, `pc_property`,
                     `apartment_number`, `created_by`, `area_id`,
-                    `wilayah`, `shabiya`, `locality`, `street_number`
+                    `wilayah`, `shabiya`, `locality`, `street_number`,
+                    `parcel_geojson`, `parcel_desc`
                  ) VALUES (
                     :o, :t, :lat, :lng, :p,
                     :pp, :pa, :pc, :ps, :prop,
                     :apt, :uid, :aid,
-                    :w, :sh, :loc, :sn
+                    :w, :sh, :loc, :sn,
+                    :pgj, :pd
                  )'
             );
             $ins->execute([
@@ -149,6 +326,8 @@ final class Address
                 'sh'    => $shabiya === '' ? null : $shabiya,
                 'loc'   => $locality === '' ? null : $locality,
                 'sn'    => $streetNumber === '' ? null : $streetNumber,
+                'pgj'   => $parcelGeojson,
+                'pd'    => $parcelDesc,
             ]);
             $id = (int) $pdo->lastInsertId();
             $pdo->commit();
@@ -180,7 +359,8 @@ final class Address
      *   id: int, postal_code: string, owner_name: string|null, type: string,
      *   latitude: string, longitude: string, apartment_number: string|null, area_id: int,
      *   wilayah: string|null, shabiya: string|null, locality: string|null, street_number: string|null,
-     *   pc_province: string|null, pc_area: int|null, pc_city: int|null, pc_sector: string|null, pc_property: int|null
+     *   pc_province: string|null, pc_area: int|null, pc_city: int|null, pc_sector: string|null, pc_property: int|null,
+     *   parcel_geojson: string|null, parcel_desc: string|null
      * }|null
      */
     public static function findById(int $id): ?array
@@ -192,7 +372,8 @@ final class Address
         $st  = $pdo->prepare(
             'SELECT a.`id`, a.`postal_code`, a.`owner_name`, a.`type`, a.`latitude`, a.`longitude`, a.`apartment_number`, a.`area_id`,
                     a.`wilayah`, a.`shabiya`, a.`locality`, a.`street_number`,
-                    a.`pc_province`, a.`pc_area`, a.`pc_city`, a.`pc_sector`, a.`pc_property`
+                    a.`pc_province`, a.`pc_area`, a.`pc_city`, a.`pc_sector`, a.`pc_property`,
+                    a.`parcel_geojson`, a.`parcel_desc`
              FROM `addresses` a WHERE a.`id` = :id LIMIT 1'
         );
         $st->execute(['id' => $id]);
@@ -218,6 +399,12 @@ final class Address
             'pc_city'            => isset($r['pc_city']) && $r['pc_city'] !== null ? (int) $r['pc_city'] : null,
             'pc_sector'          => isset($r['pc_sector']) && $r['pc_sector'] !== null ? (string) $r['pc_sector'] : null,
             'pc_property'        => isset($r['pc_property']) && $r['pc_property'] !== null ? (int) $r['pc_property'] : null,
+            'parcel_geojson'     => isset($r['parcel_geojson']) && $r['parcel_geojson'] !== null && $r['parcel_geojson'] !== ''
+                ? (string) $r['parcel_geojson']
+                : null,
+            'parcel_desc'        => isset($r['parcel_desc']) && $r['parcel_desc'] !== null && $r['parcel_desc'] !== ''
+                ? (string) $r['parcel_desc']
+                : null,
         ];
     }
 
@@ -230,10 +417,12 @@ final class Address
      *   owner_name?: string|null, type?: string, apartment_number?: string|null,
      *   latitude?: float|string|null, longitude?: float|string|null,
      *   pc_province?: string, pc_area?: int|string, pc_city?: int|string, pc_sector?: string,
-     *   wilayah?: string|null, shabiya?: string|null, locality?: string|null, street_number?: string|null
+     *   wilayah?: string|null, shabiya?: string|null, locality?: string|null, street_number?: string|null,
+     *   parcel_geojson?: string|null, parcel_desc?: string|null
      * } $data
+     * @return string[] non-blocking warnings (duplicates, etc.)
      */
-    public static function update(int $id, array $data): void
+    public static function update(int $id, array $data): array
     {
         $cur = self::findById($id);
         if ($cur === null) {
@@ -320,6 +509,15 @@ final class Address
         }
         if ($streetNumber === '') { $streetNumber = null; }
 
+        $parcelGeojson = array_key_exists('parcel_geojson', $data)
+            ? self::normalizeParcelGeojson($data['parcel_geojson'] === null ? null : (string) $data['parcel_geojson'])
+            : $cur['parcel_geojson'];
+        $parcelDesc = array_key_exists('parcel_desc', $data)
+            ? self::normalizeParcelDesc($data['parcel_desc'] === null ? null : (string) $data['parcel_desc'])
+            : $cur['parcel_desc'];
+
+        $warnings = self::duplicateWarnings($shabiya, $locality, $lat, $lng, $parcelGeojson, $id);
+
         $segChanged = (
             ((string) ($cur['pc_province'] ?? '')) !== $province ||
             (int) ($cur['pc_area'] ?? 0) !== $pcArea ||
@@ -357,7 +555,9 @@ final class Address
                     `wilayah` = :w,
                     `shabiya` = :sh,
                     `locality` = :loc,
-                    `street_number` = :sn
+                    `street_number` = :sn,
+                    `parcel_geojson` = :pgj,
+                    `parcel_desc` = :pd
                  WHERE `id` = :id'
             );
             $st->execute([
@@ -376,6 +576,8 @@ final class Address
                 'sh'   => $shabiya,
                 'loc'  => $locality,
                 'sn'   => $streetNumber,
+                'pgj'  => $parcelGeojson,
+                'pd'   => $parcelDesc,
                 'id'   => $id,
             ]);
             $pdo->commit();
@@ -395,6 +597,8 @@ final class Address
             }
             throw new RuntimeException('تعذّر حفظ تعديلات العنوان.', 0, $e);
         }
+
+        return $warnings;
     }
 
     public static function ownerIdOf(int $id): ?int
@@ -454,5 +658,117 @@ final class Address
     private static function roundDecimal7(float $v): string
     {
         return number_format($v, 7, '.', '');
+    }
+
+    private static function normalizeParcelDesc(?string $desc): ?string
+    {
+        if ($desc === null) {
+            return null;
+        }
+        $desc = trim($desc);
+        if ($desc === '') {
+            return null;
+        }
+        if (strlen($desc) > 500) {
+            throw new RuntimeException('وصف حدود الأرض طويل جداً (حتى 500 حرف).');
+        }
+
+        return $desc;
+    }
+
+    private static function normalizeParcelGeojson(?string $raw): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+        try {
+            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            throw new RuntimeException('صيغة حدود الأرض (GeoJSON) غير صالحة.');
+        }
+        if (!is_array($decoded)) {
+            throw new RuntimeException('صيغة حدود الأرض (GeoJSON) غير صالحة.');
+        }
+        self::assertValidParcelGeometry($decoded);
+
+        return json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    /** @param array<string, mixed> $geom */
+    private static function assertValidParcelGeometry(array $geom): void
+    {
+        $type = (string) ($geom['type'] ?? '');
+        if ($type === 'FeatureCollection') {
+            $features = $geom['features'] ?? null;
+            if (!is_array($features) || $features === []) {
+                throw new RuntimeException('حدود الأرض فارغة.');
+            }
+            foreach ($features as $feature) {
+                if (!is_array($feature)) {
+                    throw new RuntimeException('حدود الأرض غير صالحة.');
+                }
+                $inner = $feature['geometry'] ?? $feature;
+                if (is_array($inner)) {
+                    self::assertValidParcelGeometry($inner);
+                }
+            }
+
+            return;
+        }
+        if ($type === 'Feature') {
+            $inner = $geom['geometry'] ?? null;
+            if (!is_array($inner)) {
+                throw new RuntimeException('حدود الأرض غير صالحة.');
+            }
+            self::assertValidParcelGeometry($inner);
+
+            return;
+        }
+        if ($type === 'Polygon') {
+            self::assertPolygonCoords($geom['coordinates'] ?? []);
+
+            return;
+        }
+        if ($type === 'MultiPolygon') {
+            $polys = $geom['coordinates'] ?? null;
+            if (!is_array($polys) || $polys === []) {
+                throw new RuntimeException('حدود الأرض غير صالحة.');
+            }
+            foreach ($polys as $poly) {
+                if (is_array($poly)) {
+                    self::assertPolygonCoords($poly);
+                }
+            }
+
+            return;
+        }
+
+        throw new RuntimeException('نوع حدود الأرض غير مدعوم.');
+    }
+
+    /** @param mixed $rings */
+    private static function assertPolygonCoords(mixed $rings): void
+    {
+        if (!is_array($rings) || $rings === [] || !is_array($rings[0])) {
+            throw new RuntimeException('مضلع حدود الأرض غير صالح.');
+        }
+        $outer = $rings[0];
+        if (!is_array($outer) || count($outer) < 4) {
+            throw new RuntimeException('حدود الأرض تحتاج 3 نقاط على الأقل.');
+        }
+        foreach ($outer as $pt) {
+            if (!is_array($pt) || count($pt) < 2) {
+                throw new RuntimeException('إحداثيات حدود الأرض غير صالحة.');
+            }
+            $lng = (float) $pt[0];
+            $lat = (float) $pt[1];
+            if (!GeoBounds::isInLibya($lat, $lng)) {
+                throw new RuntimeException('حدود الأرض خارج نطاق ليبيا.');
+            }
+        }
     }
 }

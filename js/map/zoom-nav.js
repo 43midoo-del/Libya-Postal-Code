@@ -128,6 +128,9 @@
       return false;
     }
     var p = hit.properties || {};
+    if (MC.blockNonPilotShabiya && MC.blockNonPilotShabiya(p.name || '', p.code || '')) {
+      return false;
+    }
     if (window.AddrMap && typeof window.AddrMap.prepareHierarchyChange === 'function') {
       window.AddrMap.prepareHierarchyChange('shabiya');
     }
@@ -276,6 +279,37 @@
 
     if (level === 'area') {
       var cityId = parseInt(state.focusedCityId, 10) || 0;
+      if (
+        state.pilotAreaPlacementActive &&
+        window.MapCore &&
+        typeof window.MapCore.exitPilotAreaPlacementMode === 'function'
+      ) {
+        nav.busy = true;
+        window.MapCore.exitPilotAreaPlacementMode({ refitCity: true }).finally(function () {
+          nav.busy = false;
+          nav.level = 'city';
+        });
+        return;
+      }
+      if (
+        cityId > 0 &&
+        window.MapCore &&
+        typeof window.MapCore.isPilotPrimaryCityId === 'function' &&
+        window.MapCore.isPilotPrimaryCityId(cityId) &&
+        window.AddrMap &&
+        typeof window.AddrMap.showPilotDernaCityBoundaries === 'function'
+      ) {
+        nav.busy = true;
+        window.AddrMap.showPilotDernaCityBoundaries(cityId, {
+          flyTo: true,
+          hidePlaceMarkers: true,
+          cityName: state.selectedPlace ? state.selectedPlace.name : 'درنة'
+        }).finally(function () {
+          nav.busy = false;
+          nav.level = 'city';
+        });
+        return;
+      }
       if (cityId > 0 && window.AddrMap && typeof window.AddrMap.showCityChildBoundaries === 'function') {
         nav.busy = true;
         window.AddrMap.showCityChildBoundaries(cityId, {

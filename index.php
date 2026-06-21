@@ -28,7 +28,7 @@ $route = isset($_GET['r']) ? (string) $_GET['r'] : 'home';
 $jsonApiRoutes = [
     'boundary_overview', 'boundary_list', 'boundary_get', 'boundary_entity_loc', 'boundary_entities',
     'boundary_save', 'boundary_delete', 'boundary_entity_create', 'boundary_entity_add_grid',
-    'boundary_export', 'boundary_province_colors', 'addresses_json', 'api_shabiya_cities', 'address_city_blocks', 'address_api',
+    'boundary_color_scope', 'boundary_export', 'boundary_province_colors', 'addresses_json', 'api_shabiya_cities', 'address_city_blocks', 'address_api',
     'postal_lookup_api', 'tile_sync_status',
 ];
 if (!in_array($route, $jsonApiRoutes, true)) {
@@ -93,6 +93,7 @@ try {
         'boundary_delete' => (new BoundaryEditorController())->apiDelete(),
         'boundary_entity_create' => (new BoundaryEditorController())->apiEntityCreate(),
         'boundary_entity_add_grid' => (new BoundaryEditorController())->apiEntityAddGrid(),
+        'boundary_color_scope' => (new BoundaryEditorController())->apiColorScope(),
         'boundary_export' => (new BoundaryEditorController())->apiExport(),
         'boundary_province_colors' => (new BoundaryEditorController())->apiProvinceColors(),
         'tile' => (new TileController())->serve(),

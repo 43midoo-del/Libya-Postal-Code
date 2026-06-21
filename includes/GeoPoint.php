@@ -73,6 +73,117 @@ final class GeoPoint
     }
 
     /**
+     * Parse any GeoJSON string (Geometry / Feature / FeatureCollection) into a flat
+     * list of Polygon coordinate arrays. Public wrapper around the internal parser.
+     *
+     * @return array<int, array<int, array<int, array<int, float>>>>
+     */
+    public static function polygonsFromGeoJson(string $raw): array
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return [];
+        }
+        return self::extractPolygons($raw);
+    }
+
+    /**
+     * Whether two polygons (each = [outerRing, hole1, …], ring = [[lng,lat], …]) overlap.
+     * Uses bbox rejection, then vertex-containment (both directions), then edge crossing.
+     *
+     * @param array<int, array<int, array<int, float>>> $a
+     * @param array<int, array<int, array<int, float>>> $b
+     */
+    public static function polygonsOverlap(array $a, array $b): bool
+    {
+        if ($a === [] || $b === []) {
+            return false;
+        }
+        $ringA = $a[0] ?? [];
+        $ringB = $b[0] ?? [];
+        if (!is_array($ringA) || count($ringA) < 3 || !is_array($ringB) || count($ringB) < 3) {
+            return false;
+        }
+        $bbA = self::ringBbox($ringA);
+        $bbB = self::ringBbox($ringB);
+        if (!self::bboxOverlap($bbA, $bbB)) {
+            return false;
+        }
+        foreach ($ringA as $pt) {
+            if (self::pointInPolygon((float) ($pt[1] ?? 0), (float) ($pt[0] ?? 0), $b)) {
+                return true;
+            }
+        }
+        foreach ($ringB as $pt) {
+            if (self::pointInPolygon((float) ($pt[1] ?? 0), (float) ($pt[0] ?? 0), $a)) {
+                return true;
+            }
+        }
+        $na = count($ringA);
+        $nb = count($ringB);
+        for ($i = 0; $i < $na - 1; $i++) {
+            for ($j = 0; $j < $nb - 1; $j++) {
+                if (self::segmentsIntersect($ringA[$i], $ringA[$i + 1], $ringB[$j], $ringB[$j + 1])) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @param array<int, array<int, float>> $ring
+     * @return array{minX: float, minY: float, maxX: float, maxY: float}
+     */
+    private static function ringBbox(array $ring): array
+    {
+        $minX = INF;
+        $minY = INF;
+        $maxX = -INF;
+        $maxY = -INF;
+        foreach ($ring as $pt) {
+            $x = (float) ($pt[0] ?? 0);
+            $y = (float) ($pt[1] ?? 0);
+            if ($x < $minX) { $minX = $x; }
+            if ($x > $maxX) { $maxX = $x; }
+            if ($y < $minY) { $minY = $y; }
+            if ($y > $maxY) { $maxY = $y; }
+        }
+        return ['minX' => $minX, 'minY' => $minY, 'maxX' => $maxX, 'maxY' => $maxY];
+    }
+
+    /**
+     * @param array{minX: float, minY: float, maxX: float, maxY: float} $a
+     * @param array{minX: float, minY: float, maxX: float, maxY: float} $b
+     */
+    private static function bboxOverlap(array $a, array $b): bool
+    {
+        return $a['minX'] <= $b['maxX'] && $a['maxX'] >= $b['minX']
+            && $a['minY'] <= $b['maxY'] && $a['maxY'] >= $b['minY'];
+    }
+
+    /**
+     * Proper segment intersection test for segments p1p2 and p3p4 (each [lng,lat]).
+     *
+     * @param array<int, float> $p1
+     * @param array<int, float> $p2
+     * @param array<int, float> $p3
+     * @param array<int, float> $p4
+     */
+    private static function segmentsIntersect(array $p1, array $p2, array $p3, array $p4): bool
+    {
+        $ccw = static function (array $a, array $b, array $c): float {
+            return ((float) $c[1] - (float) $a[1]) * ((float) $b[0] - (float) $a[0])
+                - ((float) $b[1] - (float) $a[1]) * ((float) $c[0] - (float) $a[0]);
+        };
+        $d1 = $ccw($p3, $p4, $p1);
+        $d2 = $ccw($p3, $p4, $p2);
+        $d3 = $ccw($p1, $p2, $p3);
+        $d4 = $ccw($p1, $p2, $p4);
+        return (($d1 > 0) !== ($d2 > 0)) && (($d3 > 0) !== ($d4 > 0));
+    }
+
+    /**
      * Lookup the polygon set for a shabiya by its code (e.g. "B2", "T12").
      * Returns NULL if no boundary data is available for that code (cannot verify).
      * Returns an array of GeoJSON Polygon coordinates (one per part for MultiPolygon).

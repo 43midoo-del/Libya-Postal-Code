@@ -11,9 +11,9 @@
  * @var int $hardLimit
  */
 $flash = $flash ?? null;
-$extraHead  = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">';
+$extraHead  = '<link rel="stylesheet" href="' . htmlspecialchars(\App\Assets::leafletCss(), ENT_QUOTES, 'UTF-8') . '">';
 $extraHead .= '<link rel="stylesheet" href="css/tile_sync.css">';
-$extraFooter  = '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>';
+$extraFooter  = '<script src="' . htmlspecialchars(\App\Assets::leafletJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script src="js/tile_sync.js" defer></script>';
 
 require dirname(__DIR__, 2) . '/partials/head.php';

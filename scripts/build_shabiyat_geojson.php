@@ -277,7 +277,89 @@ if (!empty($adj)) {
     $maskPath = $root . '/data/libya-mask-inner-ring.geojson';
     file_put_contents($maskPath, json_encode($maskFeature, JSON_UNESCAPED_UNICODE));
     fwrite(STDOUT, 'Wrote country mask with ' . count($ringOut) . " points to $maskPath\n");
+
+    $visibleRing = buildVisibleMaritimeMaskRing($ringOut);
+    $visibleFeature = [
+        'type' => 'Feature',
+        'properties' => [
+            'name' => 'LibyaVisibleMaskRing',
+            'note' => 'Land outline plus a modest maritime buffer for the map hole.',
+        ],
+        'geometry' => [
+            'type' => 'Polygon',
+            'coordinates' => [$visibleRing],
+        ],
+    ];
+    $visiblePath = $root . '/data/libya-visible-mask-ring.geojson';
+    file_put_contents($visiblePath, json_encode($visibleFeature, JSON_UNESCAPED_UNICODE));
+    fwrite(STDOUT, 'Wrote visible maritime mask with ' . count($visibleRing) . " points to $visiblePath\n");
 } else {
     fwrite(STDERR, "Could not derive country mask: no unique boundary edges.\n");
+}
+
+/**
+ * @param list<array{0: float, 1: float}> $landRing [lng, lat]
+ * @return list<array{0: float, 1: float}>
+ */
+function buildVisibleMaritimeMaskRing(array $landRing): array
+{
+    $profile = [];
+    foreach ($landRing as $point) {
+        $lng = $point[0];
+        $lat = $point[1];
+        $key = (string) (round($lng * 4) / 4);
+        if (!isset($profile[$key]) || $lat > $profile[$key]) {
+            $profile[$key] = $lat;
+        }
+    }
+
+    $northPush = 0.22;
+    $sirteSouthPush = 0.28;
+    $coastTol = 0.22;
+    $visible = [];
+
+    foreach ($landRing as $point) {
+        $lng = $point[0];
+        $lat = $point[1];
+        $coastLat = northernCoastLatFromProfile($profile, $lng);
+        if ($lng >= 9.2 && $lng <= 25.2 && $coastLat !== null && $coastLat >= 28.8) {
+            $onNorthCoast = $lat >= $coastLat - $coastTol;
+            $inSirteGulf = $lng >= 16.0 && $lng <= 20.5
+                && $lat < $coastLat - 0.08 && $lat >= 29.8 && $lat <= 32.2;
+            if ($onNorthCoast) {
+                $lat += $northPush;
+            } elseif ($inSirteGulf) {
+                $lat -= $sirteSouthPush;
+            }
+        }
+        $visible[] = [$lng, $lat];
+    }
+
+    if ($visible !== [] && $visible[0] !== $visible[count($visible) - 1]) {
+        $visible[] = $visible[0];
+    }
+
+    return $visible;
+}
+
+/**
+ * @param array<string, float> $profile
+ */
+function northernCoastLatFromProfile(array $profile, float $lng): ?float
+{
+    $key = (string) (round($lng * 4) / 4);
+    if (isset($profile[$key])) {
+        return $profile[$key];
+    }
+    $bestKey = null;
+    $bestDelta = INF;
+    foreach ($profile as $k => $lat) {
+        $delta = abs((float) $k - $lng);
+        if ($delta < $bestDelta) {
+            $bestDelta = $delta;
+            $bestKey = $k;
+        }
+    }
+    return $bestKey !== null ? $profile[$bestKey] : null;
 }
 

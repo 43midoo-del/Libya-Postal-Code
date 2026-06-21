@@ -34,17 +34,8 @@ $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
       var swUrl = 'public/sw.js?v=<?= htmlspecialchars($swJsVer, ENT_QUOTES, 'UTF-8') ?>';
       window.addEventListener('load', function () {
         navigator.serviceWorker.register(swUrl, { scope: '.' }).then(function (reg) {
-          reg.update();
-          if (reg.waiting) {
-            reg.waiting.postMessage({ action: 'skipWaiting' });
-          }
+          reg.update().catch(function () {});
         }).catch(function () {});
-      });
-      var reloaded = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (reloaded) { return; }
-        reloaded = true;
-        window.location.reload();
       });
     })();
     </script>

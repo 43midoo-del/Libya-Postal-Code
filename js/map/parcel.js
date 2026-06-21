@@ -1,6 +1,7 @@
 /**
  * Parcel drawing tool: polygon vertices, preview, color palette wiring, finish/cancel,
  * exposes the click handler to MapCore so the main click dispatcher can route to it.
+ * Also exposes window.MapParcel for serialization and reload of saved boundaries.
  */
 (function () {
   'use strict';
@@ -71,6 +72,92 @@
     if (can) { can.disabled = state.drawMode !== 'parcel' && n === 0; }
   }
 
+  function parseStoredGeoJson(raw) {
+    if (!raw) {
+      return null;
+    }
+    if (typeof raw === 'object') {
+      return raw;
+    }
+    try {
+      return JSON.parse(String(raw));
+    } catch (eParse) {
+      return null;
+    }
+  }
+
+  function collectPolygonLayers() {
+    var polys = [];
+    annotations.eachLayer(function (layer) {
+      if (layer instanceof L.Polygon && layer !== parcelPreview) {
+        polys.push(layer);
+      }
+    });
+    return polys;
+  }
+
+  function getGeoJSON() {
+    var polys = collectPolygonLayers();
+    if (polys.length < 1) {
+      return null;
+    }
+    var features = [];
+    for (var i = 0; i < polys.length; i++) {
+      var gj = polys[i].toGeoJSON();
+      if (gj && gj.geometry) {
+        features.push(gj);
+      }
+    }
+    if (features.length < 1) {
+      return null;
+    }
+    var descEl = document.getElementById('map-parcel-desc');
+    var desc = descEl ? String(descEl.value || '').trim() : '';
+    var geojson = features.length === 1 ? features[0].geometry : {
+      type: 'FeatureCollection',
+      features: features
+    };
+    return { geojson: geojson, desc: desc };
+  }
+
+  function clearFinishedParcels() {
+    var toRemove = collectPolygonLayers();
+    for (var ri = 0; ri < toRemove.length; ri++) {
+      try { annotations.removeLayer(toRemove[ri]); } catch (eRm) {}
+    }
+  }
+
+  function loadFromGeoJSON(raw, desc, color, viewOnly) {
+    clearFinishedParcels();
+    clearParcelDraft(false);
+    var gj = parseStoredGeoJson(raw);
+    if (!gj) {
+      return false;
+    }
+    var useColor = color || drawColor;
+    var tip = desc ? String(desc) : '';
+    var descEl = document.getElementById('map-parcel-desc');
+    if (descEl && tip) {
+      descEl.value = tip;
+    }
+    L.geoJSON(gj, {
+      style: {
+        color: useColor,
+        weight: 2,
+        fillColor: useColor,
+        fillOpacity: 0.14,
+        interactive: !viewOnly
+      },
+      onEachFeature: function (feature, layer) {
+        if (tip) {
+          layer.bindTooltip(tip, { sticky: true });
+        }
+        layer.addTo(annotations);
+      }
+    });
+    return true;
+  }
+
   function finishParcelPolygon() {
     if (parcelVertices.length < 3) {
       return;
@@ -97,6 +184,12 @@
     parcelVertices = [];
     setDrawMode('none');
     syncToolboxActive();
+    try {
+      var ring = poly.getLatLngs();
+      window.dispatchEvent(
+        new CustomEvent('addr-parcel-finished', { detail: { latlngs: ring && ring[0] ? ring[0] : ring, layer: poly } })
+      );
+    } catch (eFin) {}
   }
 
   var toolbox = document.querySelector('.gis-toolbox');
@@ -170,5 +263,36 @@
     setDrawMode('none');
     syncToolboxActive();
   };
+
+  window.MapParcel = {
+    getGeoJSON: getGeoJSON,
+    loadFromGeoJSON: loadFromGeoJSON,
+    clearAll: function () {
+      window.dispatchEvent(new Event('addr-map-clear-annotations'));
+    },
+    hasParcel: function () {
+      return collectPolygonLayers().length > 0;
+    },
+    removeParcelLayer: function (layer) {
+      if (!layer) { return; }
+      try { annotations.removeLayer(layer); } catch (eRmL) {}
+      updateParcelButtons();
+    },
+    getLayerGroup: function () {
+      return annotations;
+    }
+  };
+
+  window.addEventListener('addr-map-load-parcel', function (ev) {
+    if (!ev || !ev.detail) {
+      return;
+    }
+    loadFromGeoJSON(
+      ev.detail.geojson,
+      ev.detail.desc || '',
+      ev.detail.color || null,
+      !!ev.detail.viewOnly
+    );
+  });
 
 })();

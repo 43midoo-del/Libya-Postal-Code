@@ -24,7 +24,7 @@ $dashData = [
     'byType'      => $byType,
     'last7Days'   => $last7Days,
 ];
-$extraFooter  = '<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>';
+$extraFooter  = '<script src="' . htmlspecialchars(\App\Assets::chartJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script type="application/json" id="dashboard-data">'
     . json_encode($dashData, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)
     . '</script>';
@@ -89,13 +89,11 @@ require dirname(__DIR__) . '/partials/app_header.php';
         <?php else: ?>
         <div class="addresses-table-wrap">
             <table class="data-table">
-                <thead><tr><th>#</th><th>الكود</th><th>المالك</th><th>الولاية / الشعبية</th><th>التاريخ</th><th></th></tr></thead>
+                <thead><tr><th>#</th><th>الكود</th><th>المالك</th><th>العنوان</th><th>التاريخ</th><th>بواسطة من</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($recent as $r):
-                    $wAr = match ((string) ($r['wilayah'] ?? '')) {
-                        'barqa' => 'برقة', 'tripolitania' => 'طرابلس', 'fezzan' => 'فزان', default => '—',
-                    };
-                    $place = $r['shabiya'] !== '' ? ($wAr . ' / ' . $r['shabiya']) : $wAr;
+                    $place = \App\Models\Address::formatPlaceSequence($r);
+                    $createdBy = trim((string) ($r['created_by_name'] ?? ''));
                 ?>
                     <tr>
                         <td class="mono"><?= (int) $r['id'] ?></td>
@@ -103,6 +101,7 @@ require dirname(__DIR__) . '/partials/app_header.php';
                         <td><?= htmlspecialchars((string) ($r['owner_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                         <td><?= htmlspecialchars($place, ENT_QUOTES, 'UTF-8') ?></td>
                         <td dir="ltr" class="mono"><?= htmlspecialchars((string) ($r['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
+                        <td><?php if ($createdBy !== ''): ?><?= htmlspecialchars($createdBy, ENT_QUOTES, 'UTF-8') ?><?php else: ?><span class="muted">—</span><?php endif; ?></td>
                         <td><a class="btn btn-ghost" href="index.php?r=address_show&amp;id=<?= (int) $r['id'] ?>">تفاصيل</a></td>
                     </tr>
                 <?php endforeach; ?>

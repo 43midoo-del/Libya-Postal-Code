@@ -21,6 +21,19 @@ final class MBTilesService
 {
     private PDO $pdo;
     private string $path;
+    private ?\PDOStatement $getTileStmt = null;
+
+    /** @var array<string, self> */
+    private static array $instances = [];
+
+    public static function open(?string $path = null): self
+    {
+        $path = $path ?: (dirname(__DIR__) . '/data/tiles/libya.mbtiles');
+        if (!isset(self::$instances[$path])) {
+            self::$instances[$path] = new self($path);
+        }
+        return self::$instances[$path];
+    }
 
     public function __construct(?string $path = null)
     {
@@ -40,8 +53,15 @@ final class MBTilesService
         }
         $this->pdo->exec('PRAGMA journal_mode=WAL');
         $this->pdo->exec('PRAGMA synchronous=NORMAL');
+        $this->pdo->exec('PRAGMA cache_size=-64000');
+        $this->pdo->exec('PRAGMA temp_store=MEMORY');
+        $this->pdo->exec('PRAGMA mmap_size=268435456');
         if ($createdNew) {
             $this->initSchema();
+        } else {
+            $this->pdo->exec(
+                'CREATE INDEX IF NOT EXISTS tiles_xyz_idx ON tiles (zoom_level, tile_column, tile_row)'
+            );
         }
     }
 
@@ -99,16 +119,18 @@ final class MBTilesService
 
     public function getTileTMS(int $z, int $x, int $tmsY): ?string
     {
-        $st = $this->pdo->prepare(
-            'SELECT tile_data FROM tiles
-             WHERE zoom_level = :z AND tile_column = :x AND tile_row = :y
-             LIMIT 1'
-        );
-        $st->bindValue(':z', $z, PDO::PARAM_INT);
-        $st->bindValue(':x', $x, PDO::PARAM_INT);
-        $st->bindValue(':y', $tmsY, PDO::PARAM_INT);
-        $st->execute();
-        $blob = $st->fetchColumn();
+        if ($this->getTileStmt === null) {
+            $this->getTileStmt = $this->pdo->prepare(
+                'SELECT tile_data FROM tiles
+                 WHERE zoom_level = :z AND tile_column = :x AND tile_row = :y
+                 LIMIT 1'
+            );
+        }
+        $this->getTileStmt->bindValue(':z', $z, PDO::PARAM_INT);
+        $this->getTileStmt->bindValue(':x', $x, PDO::PARAM_INT);
+        $this->getTileStmt->bindValue(':y', $tmsY, PDO::PARAM_INT);
+        $this->getTileStmt->execute();
+        $blob = $this->getTileStmt->fetchColumn();
         if ($blob === false || $blob === null) {
             return null;
         }

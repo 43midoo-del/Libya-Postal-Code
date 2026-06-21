@@ -16,15 +16,15 @@
 $flash = $flash ?? null;
 $bodyClass = 'boundary-editor-body';
 
-$extraHead  = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">';
-$extraHead .= '<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.css" crossorigin="anonymous">';
+$extraHead  = '<link rel="stylesheet" href="' . htmlspecialchars(\App\Assets::leafletCss(), ENT_QUOTES, 'UTF-8') . '">';
+$extraHead .= '<link rel="stylesheet" href="' . htmlspecialchars(\App\Assets::geomanCss(), ENT_QUOTES, 'UTF-8') . '">';
 $projectRoot = dirname(__DIR__, 3);
 $beCss = 'css/boundary_editor.css';
 $beCssVer = is_file($projectRoot . '/' . $beCss) ? (string) filemtime($projectRoot . '/' . $beCss) : (string) time();
 $extraHead .= '<link rel="stylesheet" href="' . htmlspecialchars($beCss . '?v=' . $beCssVer, ENT_QUOTES, 'UTF-8') . '">';
 
-$extraFooter  = '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>';
-$extraFooter .= '<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.min.js" crossorigin="anonymous"></script>';
+$extraFooter  = '<script src="' . htmlspecialchars(\App\Assets::leafletJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
+$extraFooter .= '<script src="' . htmlspecialchars(\App\Assets::geomanJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
 $beJs = 'js/boundary/editor.js';
 $beJsVer = is_file($projectRoot . '/' . $beJs) ? (string) filemtime($projectRoot . '/' . $beJs) : (string) time();
 $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/index.php'));
@@ -94,6 +94,14 @@ $roleAr = match ($userRole) {
                 </div>
 
                 <div class="be-entity-section">
+                    <div class="be-scope-color" id="be-scope-color-wrap">
+                        <label class="form-label" id="be-scope-color-label" for="be-scope-color">لون حدود النطاق</label>
+                        <div class="be-scope-color__row">
+                            <input class="form-input be-scope-color__input" type="color" id="be-scope-color" value="#0ea5e9" disabled>
+                            <button class="btn btn-primary be-scope-color__apply" type="button" id="be-scope-color-apply" disabled>تطبيق على الكل</button>
+                        </div>
+                        <p class="be-scope-color__hint muted small" id="be-scope-color-hint">اختر الولاية لتلوين جميع الشعبيات داخلها.</p>
+                    </div>
                     <label class="form-label" id="be-entity-label" for="be-entity">الولاية المراد تحريرها</label>
                     <select id="be-entity" class="form-input"><option value="">اختر ولاية</option></select>
                 </div>

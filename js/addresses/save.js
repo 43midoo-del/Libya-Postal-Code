@@ -165,6 +165,14 @@
         .then(function (x) {
           if (x.j && x.j.ok) {
             openSaveSuccessOverlay(x.j.record, x.j.postalCode, x.j.id);
+            if (overlaySummaryEl && Array.isArray(x.j.warnings) && x.j.warnings.length) {
+              for (var wi = 0; wi < x.j.warnings.length; wi++) {
+                var pw = document.createElement('p');
+                pw.className = 'addr-save-success__line addr-save-success__line--warn';
+                pw.textContent = String(x.j.warnings[wi]);
+                overlaySummaryEl.appendChild(pw);
+              }
+            }
             AF.resetAfterSaveToShabiya();
             return;
           }

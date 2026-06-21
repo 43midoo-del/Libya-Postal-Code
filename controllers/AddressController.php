@@ -31,6 +31,11 @@ final class AddressController extends BaseController
                 Flash::set('العنوان غير موجود.', Flash::ERR);
                 $this->redirect('index.php?r=addresses');
             }
+            if (!$this->canMutate($editId)) {
+                http_response_code(403);
+                $this->render('error/forbidden.php', ['message' => 'لا تملك صلاحية تعديل هذا العنوان.']);
+                return;
+            }
         }
         $mapRegions = require dirname(__DIR__) . '/config/postal_map_regions.php';
         $mapLabels   = [];
@@ -91,6 +96,8 @@ final class AddressController extends BaseController
         $shabiya  = trim((string) ($_POST['shabiya'] ?? ''));
         $locality = trim((string) ($_POST['locality'] ?? ''));
         $streetNo = trim((string) ($_POST['street_number'] ?? ''));
+        $parcelGj = trim((string) ($_POST['parcel_geojson'] ?? ''));
+        $parcelDesc = trim((string) ($_POST['parcel_desc'] ?? ''));
 
         if ($areaId < 1) {
             Flash::set('إعداد default_postal_area_id غير صالح في التكوين.', Flash::ERR);
@@ -116,7 +123,9 @@ final class AddressController extends BaseController
                 $pcSector,
                 $shabiya === '' ? null : $shabiya,
                 $locality === '' ? null : $locality,
-                $streetNo === '' ? null : $streetNo
+                $streetNo === '' ? null : $streetNo,
+                $parcelGj === '' ? null : $parcelGj,
+                $parcelDesc === '' ? null : $parcelDesc
             );
             $okMsg = 'تم حفظ العنوان. الكود البريدي: ' . $res['postalCode'] . ' — مُعرف في النظام: ' . (string) $res['id'];
             if (!empty($res['warnings'])) {
@@ -485,6 +494,8 @@ final class AddressController extends BaseController
         $shabiya  = isset($data['shabiya']) ? trim((string) $data['shabiya']) : '';
         $locality = isset($data['locality']) ? trim((string) $data['locality']) : '';
         $streetNo = isset($data['street_number']) ? trim((string) $data['street_number']) : '';
+        $parcelGj = isset($data['parcel_geojson']) ? trim((string) $data['parcel_geojson']) : '';
+        $parcelDesc = isset($data['parcel_desc']) ? trim((string) $data['parcel_desc']) : '';
 
         if ($latS === '' || $lngS === '' || !is_numeric($latS) || !is_numeric($lngS)) {
             throw new RuntimeException('انقر على الخريطة لتحديد الموقع.');
@@ -504,7 +515,9 @@ final class AddressController extends BaseController
                 $pcSector,
                 $shabiya === '' ? null : $shabiya,
                 $locality === '' ? null : $locality,
-                $streetNo === '' ? null : $streetNo
+                $streetNo === '' ? null : $streetNo,
+                $parcelGj === '' ? null : $parcelGj,
+                $parcelDesc === '' ? null : $parcelDesc
             );
         $rec = Address::findById((int) $res['id']);
         echo json_encode([
@@ -540,6 +553,59 @@ final class AddressController extends BaseController
         if ($id < 1) {
             throw new RuntimeException('مُعرف العنوان غير صالح.');
         }
+        if (!$this->canMutate($id)) {
+            throw new RuntimeException('لا تملك صلاحية تعديل هذا العنوان.');
+        }
+
+        $hasFullPayload = isset($data['map_lat']) && trim((string) $data['map_lat']) !== '';
+        if ($hasFullPayload) {
+            $holder   = isset($data['holder_name']) ? trim((string) $data['holder_name']) : '';
+            $type     = (string) ($data['type'] ?? '');
+            $apt      = isset($data['apartment_number']) ? trim((string) $data['apartment_number']) : '';
+            $latS     = trim((string) ($data['map_lat'] ?? ''));
+            $lngS     = trim((string) ($data['map_lng'] ?? ''));
+            $province = strtoupper(trim((string) ($data['pc_province'] ?? '')));
+            $pcArea   = (int) ($data['pc_area'] ?? 0);
+            $pcCity   = (int) ($data['pc_city'] ?? 0);
+            $pcSector = (string) ($data['pc_sector'] ?? '');
+            $shabiya  = isset($data['shabiya']) ? trim((string) $data['shabiya']) : '';
+            $locality = isset($data['locality']) ? trim((string) $data['locality']) : '';
+            $streetNo = isset($data['street_number']) ? trim((string) $data['street_number']) : '';
+            $parcelGj = isset($data['parcel_geojson']) ? trim((string) $data['parcel_geojson']) : '';
+            $parcelDesc = isset($data['parcel_desc']) ? trim((string) $data['parcel_desc']) : '';
+
+            if ($latS === '' || $lngS === '' || !is_numeric($latS) || !is_numeric($lngS)) {
+                throw new RuntimeException('انقر على الخريطة لتحديد الموقع.');
+            }
+
+            $warnings = Address::update($id, [
+                'owner_name'       => $holder === '' ? null : $holder,
+                'type'             => $type,
+                'apartment_number' => $apt === '' ? null : $apt,
+                'latitude'         => (float) $latS,
+                'longitude'        => (float) $lngS,
+                'pc_province'      => $province,
+                'pc_area'          => $pcArea,
+                'pc_city'          => $pcCity,
+                'pc_sector'        => $pcSector,
+                'shabiya'          => $shabiya === '' ? null : $shabiya,
+                'locality'         => $locality === '' ? null : $locality,
+                'street_number'    => $streetNo === '' ? null : $streetNo,
+                'parcel_geojson'   => $parcelGj === '' ? null : $parcelGj,
+                'parcel_desc'      => $parcelDesc === '' ? null : $parcelDesc,
+            ]);
+            $rec = Address::findById($id);
+            echo json_encode([
+                'ok'       => true,
+                'message'  => 'تم حفظ تعديلات العنوان.',
+                'id'       => $id,
+                'record'   => $rec,
+                'warnings' => $warnings,
+            ], JSON_UNESCAPED_UNICODE);
+
+            return;
+        }
+
         $holder = isset($data['holder_name']) ? trim((string) $data['holder_name']) : '';
         $type   = (string) ($data['type'] ?? '');
         $apt    = isset($data['apartment_number']) ? trim((string) $data['apartment_number']) : '';
@@ -553,6 +619,9 @@ final class AddressController extends BaseController
         $id = (int) ($data['id'] ?? 0);
         if ($id < 1) {
             throw new RuntimeException('مُعرف غير صالح.');
+        }
+        if (!$this->canMutate($id)) {
+            throw new RuntimeException('لا تملك صلاحية حذف هذا العنوان.');
         }
         Address::deleteById($id);
         echo json_encode(['ok' => true, 'message' => 'تم حذف العنوان.'], JSON_UNESCAPED_UNICODE);
@@ -655,30 +724,21 @@ final class AddressController extends BaseController
         ]);
     }
 
-    /** Full edit form (staff only): map + all postal segments + metadata. */
+    /** Full edit form (staff only): redirect to unified address_new dashboard. */
     public function editFullForm(): void
     {
         $this->requireAnyRole(['admin', 'employee']);
         $id = (int) ($_GET['id'] ?? 0);
+        if ($id < 1) {
+            Flash::set('مُعرف العنوان غير صالح.', Flash::ERR);
+            $this->redirect('index.php?r=addresses');
+        }
         $row = Address::findById($id);
         if ($row === null) {
             Flash::set('العنوان غير موجود.', Flash::ERR);
             $this->redirect('index.php?r=addresses');
         }
-        $mapCfg = require dirname(__DIR__) . '/config/map.php';
-        $libya  = LibyaAdmin::definitions();
-        $this->render('addresses/edit.php', [
-            'title'      => 'تعديل عنوان كامل',
-            'row'        => $row,
-            'libya'      => $libya,
-            'mapCfg'     => $mapCfg,
-            'userName'   => SessionAuth::userName(),
-            'userRole'   => SessionAuth::userRole(),
-            'navCurrent' => 'addresses',
-            'csrf'       => Csrf::getToken(),
-            'flash'      => Flash::getAndClear(),
-            'appShellClass' => 'app-shell--wide',
-        ]);
+        $this->redirect('index.php?r=address_new&id=' . (string) $id);
     }
 
     public function fullUpdate(): void
@@ -697,6 +757,10 @@ final class AddressController extends BaseController
             Flash::set('مُعرف غير صالح.', Flash::ERR);
             $this->redirect('index.php?r=addresses');
         }
+        if (!$this->canMutate($id)) {
+            Flash::set('لا تملك صلاحية تعديل هذا العنوان.', Flash::ERR);
+            $this->redirect('index.php?r=address_new&id=' . (string) $id);
+        }
         $data = [
             'owner_name'       => isset($_POST['owner_name']) ? trim((string) $_POST['owner_name']) : null,
             'type'             => (string) ($_POST['type'] ?? ''),
@@ -710,14 +774,20 @@ final class AddressController extends BaseController
             'shabiya'          => isset($_POST['shabiya']) ? trim((string) $_POST['shabiya']) : null,
             'locality'         => isset($_POST['locality']) ? trim((string) $_POST['locality']) : null,
             'street_number'    => isset($_POST['street_number']) ? trim((string) $_POST['street_number']) : null,
+            'parcel_geojson'   => trim((string) ($_POST['parcel_geojson'] ?? '')),
+            'parcel_desc'      => trim((string) ($_POST['parcel_desc'] ?? '')),
         ];
         try {
-            Address::update($id, $data);
-            Flash::set('تم حفظ تعديلات العنوان.', Flash::OK);
+            $warnings = Address::update($id, $data);
+            $okMsg = 'تم حفظ تعديلات العنوان.';
+            if ($warnings !== []) {
+                $okMsg .= ' — ' . implode(' ', $warnings);
+            }
+            Flash::set($okMsg, Flash::OK);
             $this->redirect('index.php?r=address_show&id=' . (string) $id);
         } catch (RuntimeException $e) {
             Flash::set($e->getMessage(), Flash::ERR);
-            $this->redirect('index.php?r=address_edit&id=' . (string) $id);
+            $this->redirect('index.php?r=address_new&id=' . (string) $id);
         }
     }
 

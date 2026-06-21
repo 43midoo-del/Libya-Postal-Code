@@ -15,7 +15,12 @@
   var neLng = parseFloat(mapEl.dataset.neLng);
 
   var map = L.map('ts-map').fitBounds([[swLat, swLng], [neLat, neLng]]);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
+  L.tileLayer('index.php?r=tile&z={z}&x={x}&y={y}', {
+    attribution: 'Libya Postal (offline) / OSM',
+    maxNativeZoom: 17,
+    updateWhenIdle: true,
+    keepBuffer: 2
+  }).addTo(map);
 
   var northIn = document.getElementById('ts-north');
   var southIn = document.getElementById('ts-south');

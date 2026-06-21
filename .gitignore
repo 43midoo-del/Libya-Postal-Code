@@ -8,18 +8,19 @@ desktop.ini
 .vscode/
 *.sublime-*
 
-# PHP / runtime
-vendor/
+# PHP / runtime (Composer packages — not our bundled Leaflet libs under vendor/)
 composer.lock
 .env
 .env.*
 !.env.example
 
-# Local database dumps & generated tiles (large / machine-specific)
+# Local database dumps; keep seeded offline map for Derna pilot
 data/tiles/*
 !data/tiles/.gitkeep
-*.mbtiles
-.env
+!data/tiles/libya.mbtiles
+!data/tiles/libya-sat.mbtiles
+!data/tiles/libya-labels-transport.mbtiles
+!data/tiles/libya-labels-places.mbtiles
 
 # Logs & temp
 *.log

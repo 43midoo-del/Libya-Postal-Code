@@ -239,6 +239,27 @@ final class Boundary
         $st->execute(['lvl' => $level, 'id' => $entityId]);
     }
 
+    /** Update stored boundary color without touching geometry. */
+    public static function updateColorOnly(string $level, int $entityId, string $color, ?int $updatedBy): void
+    {
+        if (!in_array($level, self::LEVELS, true) || $entityId < 1) {
+            return;
+        }
+        $color = self::normalizeColor($color);
+        if ($color === null) {
+            return;
+        }
+        $pdo = Database::getInstance()->getPdo();
+        $pdo->prepare(
+            'UPDATE boundaries SET color = :color, updated_by = :uid WHERE level = :lvl AND entity_id = :id'
+        )->execute([
+            'color' => $color,
+            'uid'   => $updatedBy,
+            'lvl'   => $level,
+            'id'    => $entityId,
+        ]);
+    }
+
     /** @return array<string, string> Letter B/T/F → #hex */
     public static function defaultProvinceColors(): array
     {

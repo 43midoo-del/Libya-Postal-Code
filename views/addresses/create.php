@@ -49,18 +49,37 @@ foreach ($sortedShabiyatRows as $row) {
     }
 }
 $b = $mapCfg['libya_bounds'];
-$center = $mapCfg['default_center'];
+$offlineCfg = \App\Assets::offlineConfig();
+$focusCenter = $offlineCfg['focus_center'] ?? [32.7558, 22.6478];
+$focusOnLoad = !empty($offlineCfg['focus_on_load']);
+$libyaCenter = $mapCfg['default_center'] ?? [26.30, 17.18];
+$center = $libyaCenter;
+if ($editRow !== null && is_numeric($editRow['latitude']) && is_numeric($editRow['longitude'])) {
+    $center = [(float) $editRow['latitude'], (float) $editRow['longitude']];
+}
 $swLat = $b['south'];
 $swLng = $b['west'];
 $neLat = $b['north'];
 $neLng = $b['east'];
 $centerLat = $center[0];
 $centerLng = $center[1];
-$zoom = (int) $mapCfg['default_zoom'];
+$zoom = $editRow !== null ? 17 : (int) ($mapCfg['default_zoom'] ?? 6);
 $minZoom = (int) $mapCfg['min_zoom'];
-$maxZoom = (int) $mapCfg['max_zoom'];
+$maxZoom = (int) min($mapCfg['max_zoom'], $offlineCfg['offline_max_zoom'] ?? 17);
 $maxZoomSat = (int) ($mapCfg['max_zoom_satellite'] ?? 17);
-$mapSatelliteDefault = true;
+$mapSatelliteDefault = false;
+$preferOffline = !empty($offlineCfg['prefer_offline']);
+$allowRemoteTiles = !empty($offlineCfg['allow_remote_tiles']);
+$defaultBase = $preferOffline ? 'offline' : 'osm';
+$offlineMaxZoom = (int) ($offlineCfg['offline_max_zoom'] ?? 17);
+$offlineSatMaxZoom = (int) ($offlineCfg['offline_sat_max_zoom'] ?? 16);
+$offlineSatAvailable = \App\Assets::offlineSatAvailable();
+$offlineLabelsTransport = \App\Assets::offlineLabelsTransportAvailable();
+$offlineLabelsPlaces = \App\Assets::offlineLabelsPlacesAvailable();
+$offlineLabelsMaxZoom = (int) ($offlineCfg['offline_labels_max_zoom'] ?? 16);
+$offlineTileZonesJson = json_encode($offlineCfg['tile_zones'] ?? [], JSON_UNESCAPED_UNICODE);
+$tileKeepBuffer = (int) ($offlineCfg['tile_keep_buffer'] ?? 2);
+$tileUpdateIdle = !isset($offlineCfg['tile_update_idle']) || $offlineCfg['tile_update_idle'];
 $initialLat = $editRow !== null ? (string) $editRow['latitude'] : '';
 $initialLng = $editRow !== null ? (string) $editRow['longitude'] : '';
 
@@ -110,14 +129,14 @@ if ($editRow !== null) {
     }
 }
 
-$bodyClass = 'addr-dashboard-one-screen';
+$bodyClass = 'addr-dashboard-one-screen' . ($editRow !== null ? ' addr-dashboard-edit-mode' : '');
 
 $assetUrl = static function (string $rel): string {
     $abs = dirname(__DIR__, 2) . '/' . str_replace('/', DIRECTORY_SEPARATOR, $rel);
     return $rel . '?v=' . (is_file($abs) ? (string) filemtime($abs) : '0');
 };
 
-$extraHead = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">';
+$extraHead = '<link rel="stylesheet" href="' . htmlspecialchars(\App\Assets::leafletCss(), ENT_QUOTES, 'UTF-8') . '">';
 $regionsJson = json_encode($mapRegions, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 $extraFooter = '<script type="application/json" id="postal-map-regions-data">' . $regionsJson . '</script>';
 $shabiyatJson = json_encode($libya['shabiyat'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
@@ -127,15 +146,43 @@ $extraFooter .= '<script type="application/json" id="shabiya-city-places-data">'
 $provinceColors = $provinceColors ?? ['B' => '#ef4444', 'T' => '#22c55e', 'F' => '#cbd5e1'];
 $pcJson = json_encode($provinceColors, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 $extraFooter .= '<script type="application/json" id="province-colors-data">' . $pcJson . '</script>';
-$extraFooter .= '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>';
-$extraFooter .= '<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" crossorigin="anonymous"></script>';
-$extraFooter .= '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>';
+$libyaMaskRingJson = '[]';
+$maskRingFile = dirname(__DIR__, 2) . '/data/libya-mask-inner-ring.geojson';
+if (is_readable($maskRingFile)) {
+    $maskGeo = json_decode((string) file_get_contents($maskRingFile), true);
+    if (is_array($maskGeo)) {
+        $maskCoords = $maskGeo['geometry']['coordinates'][0] ?? [];
+        if (is_array($maskCoords) && count($maskCoords) >= 4) {
+            $libyaMaskRingJson = json_encode($maskCoords, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+        }
+    }
+}
+$extraFooter .= '<script type="application/json" id="libya-mask-ring-data">' . htmlspecialchars($libyaMaskRingJson, ENT_NOQUOTES, 'UTF-8') . '</script>';
+$extraFooter .= '<script>window.LP_LIBYA_MASK_RING=' . $libyaMaskRingJson . ';</script>';
+$libyaVisibleMaskRingJson = '[]';
+$visibleMaskRingFile = dirname(__DIR__, 2) . '/data/libya-visible-mask-ring.geojson';
+if (is_readable($visibleMaskRingFile)) {
+    $visibleMaskGeo = json_decode((string) file_get_contents($visibleMaskRingFile), true);
+    if (is_array($visibleMaskGeo)) {
+        $visibleMaskCoords = $visibleMaskGeo['geometry']['coordinates'][0] ?? [];
+        if (is_array($visibleMaskCoords) && count($visibleMaskCoords) >= 4) {
+            $libyaVisibleMaskRingJson = json_encode($visibleMaskCoords, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+        }
+    }
+}
+$extraFooter .= '<script>window.LP_LIBYA_VISIBLE_MASK_RING=' . $libyaVisibleMaskRingJson . ';</script>';
+$extraFooter .= '<script src="' . htmlspecialchars(\App\Assets::leafletJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
+$extraFooter .= '<script src="' . htmlspecialchars(\App\Assets::html2canvasJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
+$extraFooter .= '<script src="' . htmlspecialchars(\App\Assets::qrcodeJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/province_colors.js'), ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/core.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/labels.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/shabiyat.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/zoom-nav.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/parcel.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
+$extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/parcel_display.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
+$extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/map/saved_addresses.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
+$extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/addresses/delete_confirm.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/addresses/form.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/addresses/save.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
 $extraFooter .= '<script src="' . htmlspecialchars($assetUrl('js/addresses/edit.js'), ENT_QUOTES, 'UTF-8') . '" defer></script>';
@@ -165,6 +212,38 @@ $csrf = \App\Csrf::getToken();
             </div>
         </div>
     </div>
+
+    <div id="addr-dup-warn-overlay" class="addr-save-success addr-dup-warn" hidden>
+        <div class="addr-save-success__backdrop" id="addr-dup-warn-backdrop" aria-hidden="true"></div>
+        <div class="addr-save-success__dialog addr-dup-warn__dialog" role="alertdialog" aria-modal="true" aria-labelledby="addr-dup-warn-title" dir="rtl">
+            <h2 id="addr-dup-warn-title" class="addr-save-success__title addr-dup-warn__title">تنبيه: تكرار محتمل</h2>
+            <p id="addr-dup-warn-message" class="addr-dup-warn__message"></p>
+            <div id="addr-dup-warn-unit-wrap" class="addr-dup-warn__unit" hidden>
+                <label class="form-label" for="addr-dup-warn-unit-input">رقم الشقة أو المبنى المنفصل داخل العقار المسجّل</label>
+                <input class="form-input form-input--mgr" type="text" id="addr-dup-warn-unit-input" maxlength="32" placeholder="مثال: شقة 4 — الدور 2">
+                <button type="button" class="btn btn--scene btn--pill-footer btn--primary-glow" id="addr-dup-warn-unit-apply">تطبيق ضمن العقار المسجّل</button>
+            </div>
+            <div class="addr-save-success__actions">
+                <button type="button" class="btn btn--scene btn--pill-footer btn--primary-glow" id="addr-dup-warn-confirm">موافق على أي حال</button>
+                <button type="button" class="btn btn--scene btn--pill-footer" id="addr-dup-warn-unit">شقة / مبنى ضمن عقار مسجّل</button>
+                <button type="button" class="btn btn--scene btn--pill-footer btn--footer-soft" id="addr-dup-warn-cancel">إلغاء وإرجاع</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addr-hood-change-overlay" class="addr-save-success addr-dup-warn" hidden>
+        <div class="addr-save-success__backdrop" id="addr-hood-change-backdrop" aria-hidden="true"></div>
+        <div class="addr-save-success__dialog addr-dup-warn__dialog" role="alertdialog" aria-modal="true" aria-labelledby="addr-hood-change-title" dir="rtl">
+            <h2 id="addr-hood-change-title" class="addr-save-success__title addr-dup-warn__title">تغيير الحي</h2>
+            <p id="addr-hood-change-message" class="addr-dup-warn__message"></p>
+            <div class="addr-save-success__actions">
+                <button type="button" class="btn btn--scene btn--pill-footer btn--primary-glow" id="addr-hood-change-confirm">نعم، متابعة</button>
+                <button type="button" class="btn btn--scene btn--pill-footer btn--footer-soft" id="addr-hood-change-cancel">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <?php require dirname(__DIR__) . '/partials/addr_delete_confirm.php'; ?>
 
     <div class="addr-page-mgr">
         <header class="addr-dash-top" dir="rtl">
@@ -197,26 +276,123 @@ $csrf = \App\Csrf::getToken();
             <aside class="add-address__sidebar panel--mgr panel--mgr--compact" dir="rtl" aria-labelledby="postal-form-title">
                 <div class="addr-sidebar__masthead">
                     <div class="addr-sidebar__header">
-                        <h2 id="postal-form-title" class="panel--mgr__title">إدارة العنوان</h2>
+                        <h2 id="postal-form-title" class="panel--mgr__title"><?= $editRow !== null ? 'تعديل العنوان' : 'إدارة العنوان' ?></h2>
                         <button type="button" id="btn-addr-sidebar-hide" class="addr-sidebar-toggle addr-sidebar-toggle--hide" aria-label="إخفاء اللوحة" title="إخفاء">
                             <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
                         </button>
                     </div>
+                    <?php if ($editRow === null): ?>
                     <p class="panel--mgr__hint muted" dir="ltr"><span class="mono postal-format-hint">B 2-1-S 9</span></p>
+                    <?php endif; ?>
                 </div>
 
-                <?php if ($editRow !== null): ?>
-                <div class="add-address__badge">تعديل سجل موجود</div>
+                <?php if ($editRow !== null):
+                    $editLocCity = '';
+                    $editLocHood = '';
+                    $editLocRaw = trim((string) ($editRow['locality'] ?? ''));
+                    if (str_contains($editLocRaw, ' | ')) {
+                        $editLocParts = explode(' | ', $editLocRaw, 2);
+                        $editLocCity = trim($editLocParts[0] ?? '');
+                        $editLocHood = trim($editLocParts[1] ?? '');
+                    } elseif ($editLocRaw !== '') {
+                        $editLocCity = $editLocRaw;
+                    }
+                    $editWilayahLbl = $ctxWilayah !== '—' ? $ctxWilayah : '—';
+                    $editShabiyaLbl = trim((string) ($editRow['shabiya'] ?? ''));
+                    if ($editShabiyaLbl === '') {
+                        $editShabiyaLbl = '—';
+                    }
+                    $pcProv = $editRow['pc_province'] ?? '';
+                    $hasSeg = $pcProv !== '' && $editRow['pc_area'] !== null && $editRow['pc_city'] !== null && $editRow['pc_sector'] !== null && $editRow['pc_property'] !== null;
+                ?>
+                <div class="addr-edit-badge-row">
+                    <span class="add-address__badge add-address__badge--edit">تعديل سجل #<?= (int) $editRow['id'] ?></span>
+                </div>
                 <?php endif; ?>
 
-                <div class="addr-form-card" <?= $editRow !== null ? ' hidden' : '' ?>>
-                <form id="addr-new-form" class="addr-form addr-form--mgr addr-form--compact addr-form--grid" action="index.php?r=address_store" method="post" novalidate>
+                <div class="addr-form-card<?= $editRow !== null ? ' addr-form-card--edit' : '' ?>">
+                <form id="addr-new-form" class="addr-form addr-form--mgr addr-form--compact addr-form--grid<?= $editRow !== null ? ' addr-form--edit-restricted' : '' ?>" action="index.php?r=address_store" method="post" novalidate>
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="pc_province" id="pc_province" value="">
                     <input type="hidden" name="pc_area" id="pc_area" value="">
                     <input type="hidden" name="pc_city" id="pc_city" value="1">
                     <input type="hidden" name="street_number" id="street_number" value="">
-                    <input type="hidden" name="apartment_number" id="apartment_number" value="">
+                    <?php if ($editRow !== null): ?>
+                    <input type="hidden" name="apartment_number" id="apartment_number" value="<?= $editRow['apartment_number'] !== null ? htmlspecialchars((string) $editRow['apartment_number'], ENT_QUOTES, 'UTF-8') : '' ?>">
+
+                    <div class="addr-edit-locked" aria-label="بيانات الموقع الثابتة">
+                        <p class="addr-edit-locked__title">الموقع</p>
+                        <dl class="addr-edit-locked__grid">
+                            <div class="addr-edit-locked__item">
+                                <dt>الولاية</dt>
+                                <dd><?= htmlspecialchars($editWilayahLbl, ENT_QUOTES, 'UTF-8') ?></dd>
+                            </div>
+                            <div class="addr-edit-locked__item">
+                                <dt>الشعبية</dt>
+                                <dd><?= htmlspecialchars($editShabiyaLbl, ENT_QUOTES, 'UTF-8') ?></dd>
+                            </div>
+                            <div class="addr-edit-locked__item">
+                                <dt>المدينة / المنطقة</dt>
+                                <dd><?= htmlspecialchars($editLocCity !== '' ? $editLocCity : '—', ENT_QUOTES, 'UTF-8') ?></dd>
+                            </div>
+                        </dl>
+                        <?php if ($hasSeg): ?>
+                        <div class="addr-edit-locked__postal">
+                            <span class="form-label">الرمز البريدي</span>
+                            <div class="postal-segments postal-segments--compact" dir="ltr" aria-label="الرمز البريدي">
+                                <span class="postal-segments__cell"><?= htmlspecialchars($pcProv, ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="postal-segments__cell"><?= (int) $editRow['pc_area'] ?></span>
+                                <span class="postal-segments__sep">-</span>
+                                <span class="postal-segments__cell"><?= (int) $editRow['pc_city'] ?></span>
+                                <span class="postal-segments__sep">-</span>
+                                <span class="postal-segments__cell"><?= htmlspecialchars((string) $editRow['pc_sector'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="postal-segments__cell postal-segments__cell--prop"><?= (int) $editRow['pc_property'] ?></span>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <div class="addr-edit-editable">
+                    <div class="addr-form__row">
+                        <label class="form-label" for="addr-neighborhood">الحي / الشارع</label>
+                        <select class="form-input form-input--mgr form-input--mgr-tight" id="addr-neighborhood" autocomplete="off">
+                            <option value="">— اختر الحي أو الشارع —</option>
+                        </select>
+                    </div>
+                    <div class="addr-form__row addr-form__row--type-owner">
+                        <div class="addr-form__cell addr-form__cell--type">
+                            <label class="form-label" for="type">نوع العقار</label>
+                            <select class="form-input form-input--mgr form-input--mgr-tight" name="type" id="type" required>
+                                <option value="residential">سكني</option>
+                                <option value="government">حكومي</option>
+                                <option value="commercial">تجاري</option>
+                            </select>
+                        </div>
+                        <div class="addr-form__cell addr-form__cell--grow">
+                            <label class="form-label" for="holder_name">اسم صاحب العقار</label>
+                            <input class="form-input form-input--mgr form-input--mgr-tight" type="text" name="holder_name" id="holder_name" maxlength="200" placeholder="اختياري">
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class="addr-form__locked-host" hidden aria-hidden="true">
+                        <div class="addr-form__row addr-form__row--3">
+                            <select class="form-input form-input--mgr form-input--mgr-tight" id="addr-wilayah" required autocomplete="off" tabindex="-1" disabled>
+                                <option value="" selected>—</option>
+                                <option value="barqa"><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('barqa'), ENT_QUOTES, 'UTF-8') ?></option>
+                                <option value="tripolitania"><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('tripolitania'), ENT_QUOTES, 'UTF-8') ?></option>
+                                <option value="fezzan"><?= htmlspecialchars(\App\Models\LibyaAdmin::wilayahSelectLabel('fezzan'), ENT_QUOTES, 'UTF-8') ?></option>
+                            </select>
+                            <select class="form-input form-input--mgr form-input--mgr-tight" name="shabiya" id="shabiya" required autocomplete="off" tabindex="-1" disabled>
+                                <option value="" selected>—</option>
+                            </select>
+                            <input class="form-input form-input--mgr form-input--mgr-tight" type="text" id="addr-city-area" maxlength="200" list="addr-city-area-list" autocomplete="off" tabindex="-1" readonly>
+                            <datalist id="addr-city-area-list"></datalist>
+                        </div>
+                        <input type="hidden" name="pc_sector" id="pc_sector" value="S">
+                        <input class="form-input form-input--mgr form-input--mgr-tight postal-property-row__input" type="text" id="pc_property_display" readonly dir="ltr" value="" tabindex="-1">
+                    </div>
+                    <?php else: ?>
 
                     <div class="addr-form__row addr-form__row--3">
                         <div class="addr-form__cell">
@@ -269,6 +445,11 @@ $csrf = \App\Csrf::getToken();
                             <input class="form-input form-input--mgr form-input--mgr-tight" type="text" name="holder_name" id="holder_name" maxlength="200" placeholder="اختياري">
                         </div>
                     </div>
+                    <div class="addr-form__row">
+                        <label class="form-label" for="apartment_number">بيان إضافي / شقة</label>
+                        <input class="form-input form-input--mgr form-input--mgr-tight" type="text" name="apartment_number" id="apartment_number" maxlength="32" placeholder="اختياري">
+                    </div>
+                    <?php endif; ?>
                 </form>
                 </div>
 
@@ -281,67 +462,6 @@ $csrf = \App\Csrf::getToken();
 
                 <input type="hidden" name="map_lat" id="map-lat" value="" form="addr-new-form">
                 <input type="hidden" name="map_lng" id="map-lng" value="" form="addr-new-form">
-
-                <?php if ($editRow !== null):
-                    $addrType = (string) $editRow['type'];
-                    $typeLegacy = !in_array($addrType, \App\Models\Address::TYPES, true);
-                    $pcProv = $editRow['pc_province'] ?? '';
-                    $pcPreview = $editRow['postal_code'];
-                    $hasSeg = $pcProv !== '' && $editRow['pc_area'] !== null && $editRow['pc_city'] !== null && $editRow['pc_sector'] !== null && $editRow['pc_property'] !== null;
-                    if ($hasSeg) {
-                        $pcPreview = $pcProv . ' ' . (string) $editRow['pc_area'] . '-' . (string) $editRow['pc_city'] . '-' . (string) $editRow['pc_sector'] . ' ' . (string) $editRow['pc_property'];
-                    }
-                ?>
-                <form id="addr-edit-form" class="addr-form addr-form--mgr addr-form--edit-block" method="post" action="index.php?r=address_update" novalidate>
-                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
-                    <input type="hidden" name="id" value="<?= (int) $editRow['id'] ?>">
-                    <h3 class="addr-form--edit-block__title">تعديل السجل</h3>
-                    <?php if ($hasSeg): ?>
-                    <div class="addr-form__row">
-                        <span class="form-label">الرمز المكوّن</span>
-                        <div class="postal-segments" dir="ltr" aria-label="الرمز البريدي">
-                            <span class="postal-segments__cell"><?= htmlspecialchars($pcProv, ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="postal-segments__cell"><?= (int) $editRow['pc_area'] ?></span>
-                            <span class="postal-segments__sep">-</span>
-                            <span class="postal-segments__cell"><?= (int) $editRow['pc_city'] ?></span>
-                            <span class="postal-segments__sep">-</span>
-                            <span class="postal-segments__cell"><?= htmlspecialchars((string) $editRow['pc_sector'], ENT_QUOTES, 'UTF-8') ?></span>
-                            <span class="postal-segments__cell postal-segments__cell--prop"><?= (int) $editRow['pc_property'] ?></span>
-                        </div>
-                    </div>
-                    <?php else: ?>
-                    <div class="addr-form__row">
-                        <span class="form-label">الرمز البريدي</span>
-                        <div class="form-static mono form-static--mgr" dir="ltr"><?= htmlspecialchars($pcPreview, ENT_QUOTES, 'UTF-8') ?></div>
-                    </div>
-                    <?php endif; ?>
-                    <div class="addr-form__row">
-                        <label class="form-label" for="edit_holder_name">اسم الحامل (اختياري)</label>
-                        <input class="form-input form-input--mgr" type="text" name="holder_name" id="edit_holder_name" maxlength="200" value="<?= $editRow['owner_name'] !== null ? htmlspecialchars($editRow['owner_name'], ENT_QUOTES, 'UTF-8') : '' ?>">
-                    </div>
-                    <div class="addr-form__row">
-                        <label class="form-label" for="edit_type">نوع العنوان</label>
-                        <select class="form-input form-input--mgr" name="type" id="edit_type" required>
-                            <?php if ($typeLegacy): ?>
-                            <option value="" selected disabled>— اختر النوع —</option>
-                            <?php endif; ?>
-                            <option value="residential" <?= !$typeLegacy && $addrType === 'residential' ? 'selected' : '' ?>>سكني</option>
-                            <option value="government" <?= !$typeLegacy && $addrType === 'government' ? 'selected' : '' ?>>حكومي</option>
-                            <option value="commercial" <?= !$typeLegacy && $addrType === 'commercial' ? 'selected' : '' ?>>تجاري</option>
-                        </select>
-                    </div>
-                    <div class="addr-form__row">
-                        <label class="form-label" for="edit_apartment_number">بيان إضافي / شقة</label>
-                        <input class="form-input form-input--mgr" type="text" name="apartment_number" id="edit_apartment_number" maxlength="32" value="<?= $editRow['apartment_number'] !== null ? htmlspecialchars($editRow['apartment_number'], ENT_QUOTES, 'UTF-8') : '' ?>">
-                    </div>
-                    <div class="addr-form__actions addr-form__actions--mgr">
-                        <button class="btn btn--save-edit" type="button" id="btn-save-changes">حفظ التغييرات</button>
-                        <button class="btn btn--delete" type="button" id="btn-delete-record">حذف السجل</button>
-                        <button class="btn btn--qr" type="button" id="btn-qr-placeholder">توليد QR (قريباً)</button>
-                    </div>
-                </form>
-                <p class="muted panel--mgr__footnote">الموقع والكود البريدي ثابتان لهذا السجل.</p>
-                <?php endif; ?>
             </aside>
             </div>
 
@@ -363,7 +483,26 @@ $csrf = \App\Csrf::getToken();
                     data-shabiyat-url="data/libya-shabiyat.geojson"
                     data-skip-neighbor-boundaries="1"
                     data-satellite="<?= $mapSatelliteDefault ? '1' : '0' ?>"
-                    data-read-only="<?= $editRow !== null ? '1' : '0' ?>"
+                    data-prefer-offline="<?= $preferOffline ? '1' : '0' ?>"
+                    data-allow-remote-tiles="<?= $allowRemoteTiles ? '1' : '0' ?>"
+                    data-default-base="<?= htmlspecialchars($defaultBase, ENT_QUOTES, 'UTF-8') ?>"
+                    data-offline-max-zoom="<?= (int) $offlineMaxZoom ?>"
+                    data-offline-sat="<?= $offlineSatAvailable ? '1' : '0' ?>"
+                    data-offline-sat-max-zoom="<?= (int) $offlineSatMaxZoom ?>"
+                    data-offline-labels-transport="<?= $offlineLabelsTransport ? '1' : '0' ?>"
+                    data-offline-labels-places="<?= $offlineLabelsPlaces ? '1' : '0' ?>"
+                    data-offline-labels-max-zoom="<?= (int) $offlineLabelsMaxZoom ?>"
+                    data-offline-tile-zones="<?= htmlspecialchars((string) $offlineTileZonesJson, ENT_QUOTES, 'UTF-8') ?>"
+                    data-focus-on-load="<?= $focusOnLoad ? '1' : '0' ?>"
+                    data-focus-lat="<?= htmlspecialchars((string) $focusCenter[0], ENT_QUOTES, 'UTF-8') ?>"
+                    data-focus-lng="<?= htmlspecialchars((string) $focusCenter[1], ENT_QUOTES, 'UTF-8') ?>"
+                    data-focus-zoom="<?= (int) ($offlineCfg['focus_zoom'] ?? 14) ?>"
+                    data-tile-keep-buffer="<?= (int) $tileKeepBuffer ?>"
+                    data-tile-update-idle="<?= $tileUpdateIdle ? '1' : '0' ?>"
+                    data-read-only="0"
+                    data-marker-icon="<?= htmlspecialchars(\App\Assets::url('vendor/leaflet/1.9.4/images/marker-icon.png'), ENT_QUOTES, 'UTF-8') ?>"
+                    data-marker-icon-2x="<?= htmlspecialchars(\App\Assets::url('vendor/leaflet/1.9.4/images/marker-icon-2x.png'), ENT_QUOTES, 'UTF-8') ?>"
+                    data-marker-shadow="<?= htmlspecialchars(\App\Assets::url('vendor/leaflet/1.9.4/images/marker-shadow.png'), ENT_QUOTES, 'UTF-8') ?>"
                     <?php if ($editRow !== null): ?>
                     data-initial-lat="<?= htmlspecialchars($initialLat, ENT_QUOTES, 'UTF-8') ?>"
                     data-initial-lng="<?= htmlspecialchars($initialLng, ENT_QUOTES, 'UTF-8') ?>"
@@ -373,24 +512,29 @@ $csrf = \App\Csrf::getToken();
                 ></div>
                 <div class="map-canvas-wrap map-canvas-wrap--mgr">
                     <div class="map-layer-controls-float map-base-layer-switch map-base-layer-switch--modern" role="group" aria-label="نوع الخريطة وعرض ليبيا">
-                        <button type="button" id="addr-map-btn-sat" class="map-base-btn map-base-btn--icon-only<?= $mapSatelliteDefault ? ' is-active' : '' ?>" aria-pressed="<?= $mapSatelliteDefault ? 'true' : 'false' ?>" aria-label="عرض صور الأقمار الصناعية" title="أقمار صناعية">
+                        <button type="button" id="addr-map-btn-offline" class="map-base-btn map-base-btn--icon-only<?= $defaultBase === 'offline' ? ' is-active' : '' ?>" aria-pressed="<?= $defaultBase === 'offline' ? 'true' : 'false' ?>" aria-label="خريطة محلية بدون إنترنت" title="محلي (offline)">
+                            <svg class="map-base-btn__icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="3.2"/></svg>
+                        </button>
+                        <?php if ($offlineSatAvailable || $allowRemoteTiles): ?>
+                        <button type="button" id="addr-map-btn-sat" class="map-base-btn map-base-btn--icon-only" aria-pressed="false" aria-label="عرض صور الأقمار الصناعية<?= $offlineSatAvailable ? ' (محلي)' : '' ?>" title="أقمار صناعية<?= $offlineSatAvailable ? ' — offline' : '' ?>">
                             <svg class="map-base-btn__icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.4"/><path d="M12 5.5V7M12 17v1.5M5.5 12H7M17 12h1.5"/><path d="m8 8 1.1 1.1M14.9 14.9 16 16M16 8l-1.1 1.1M8 15.9 6.9 14"/><path d="M5 5c5.1-4 11.9-2.9 15.9 2.1"/><path d="M8 8c2.9-1.9 6.7-.8 8.6 2.1"/></svg>
                         </button>
-                        <button type="button" id="addr-map-btn-osm" class="map-base-btn map-base-btn--icon-only<?= !$mapSatelliteDefault ? ' is-active' : '' ?>" aria-pressed="<?= !$mapSatelliteDefault ? 'true' : 'false' ?>" aria-label="عرض الخريطة التفصيلية" title="خريطة تفصيلية">
+                        <?php endif; ?>
+                        <?php if ($allowRemoteTiles): ?>
+                        <button type="button" id="addr-map-btn-osm" class="map-base-btn map-base-btn--icon-only<?= !$mapSatelliteDefault && $defaultBase === 'osm' ? ' is-active' : '' ?>" aria-pressed="<?= !$mapSatelliteDefault && $defaultBase === 'osm' ? 'true' : 'false' ?>" aria-label="عرض الخريطة التفصيلية عبر الإنترنت" title="خريطة تفصيلية (إنترنت)">
                             <svg class="map-base-btn__icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 12 6l8 3.5V17l-8 3.5L4 17z"/><path d="M4 9.5 12 13l8-3.5"/><path d="M12 6v14"/></svg>
                         </button>
+                        <?php endif; ?>
                         <button type="button" id="addr-map-btn-fit" class="map-base-btn map-base-btn--ghost map-base-btn--fit-libya" title="عرض كامل ليبيا" aria-label="ملء الإطار بحدود ليبيا">
                             <span class="map-base-btn__label">ليبيا</span>
                         </button>
                     </div>
-                    <?php if ($editRow === null): ?>
+                    <div id="map" class="map-canvas map-canvas--add" role="application" aria-label="خريطة ليبيا"></div>
                     <div id="map-marker-cta-slot" class="map-marker-cta-float" hidden aria-hidden="true">
                         <button type="button" id="btn-place-marker-toggle" class="map-base-btn map-base-btn--marker map-base-btn--marker-cta" aria-pressed="false" title="فعّل ثم انقر على الخريطة لوضع العلامة والإحداثيات">
                             <span class="map-base-btn__label">تثبيت علامة الموقع</span>
                         </button>
                     </div>
-                    <?php endif; ?>
-                    <div id="map" class="map-canvas map-canvas--add" role="application" aria-label="خريطة ليبيا"></div>
                     <div id="map-coords-readout" class="map-coords-readout map-coords-readout--mgr map-coords-readout--chip" dir="ltr" aria-live="polite">
                         <span class="map-coords-readout__ar">الإحداثيات</span>
                         <span id="map-coords-values" class="map-coords-readout__vals mono">— ، —</span>
@@ -403,7 +547,7 @@ $csrf = \App\Csrf::getToken();
             </button>
 
             <div class="gis-toolbox-shell" id="gis-toolbox-shell">
-            <aside class="gis-toolbox gis-toolbox--modern gis-toolbox--compact gis-toolbox--parcel<?= $editRow !== null ? ' gis-toolbox--readonly' : '' ?>" dir="rtl" aria-label="رسم حدود القطعة">
+            <aside class="gis-toolbox gis-toolbox--modern gis-toolbox--compact gis-toolbox--parcel<?= $editRow !== null ? ' gis-toolbox--edit-mode' : '' ?>" dir="rtl" aria-label="رسم حدود القطعة">
                 <div class="gis-toolbox__header">
                     <h3 class="gis-toolbox__title">إدارة الحدود</h3>
                     <button type="button" id="btn-gis-toolbox-hide" class="gis-toolbox-toggle gis-toolbox-toggle--hide" aria-label="إخفاء اللوحة" title="إخفاء">
@@ -425,17 +569,22 @@ $csrf = \App\Csrf::getToken();
                 </fieldset>
                 <div class="gis-parcel-actions">
                     <button type="button" class="gis-tool-btn" data-map-tool="parcel">رسم الحدود</button>
-                    <button type="button" class="gis-tool-btn gis-tool-btn--secondary" id="btn-parcel-finish" disabled>إنهاء الشكل</button>
-                    <button type="button" class="gis-tool-btn gis-tool-btn--ghost" id="btn-parcel-cancel" disabled>إلغاء</button>
+                    <button type="button" class="gis-tool-btn gis-tool-btn--secondary" id="btn-parcel-finish" disabled>إنهاء</button>
                 </div>
-                <fieldset class="gis-fieldset gis-fieldset--minimal">
+                <fieldset class="gis-fieldset gis-fieldset--minimal gis-fieldset--parcel-desc">
                     <legend class="gis-legend-sm">وصف القطعة</legend>
                     <textarea id="map-parcel-desc" rows="2" maxlength="500" placeholder="يُعرض عند مرور المؤشر على الحد"></textarea>
                 </fieldset>
                 <div class="gis-layer-toggles gis-layer-toggles--tight">
                     <label><input type="checkbox" id="layer-labels" checked> تسميات B1–F22</label>
                     <label><input type="checkbox" id="layer-entity-labels" checked> تسميات الكيانات</label>
+                    <?php if ($editRow === null): ?>
                     <label><input type="checkbox" id="layer-boundaries" checked> الحدود والشبكات</label>
+                    <?php endif; ?>
+                </div>
+                <div class="gis-layer-toggles gis-layer-toggles--tight" id="saved-addr-toggles" hidden>
+                    <label><input type="checkbox" id="layer-saved-points" checked> نقاط العناوين المسجّلة</label>
+                    <label><input type="checkbox" id="layer-saved-parcels" checked> حدود العناوين المسجّلة</label>
                 </div>
             </aside>
             </div>
@@ -443,19 +592,46 @@ $csrf = \App\Csrf::getToken();
             
             </div>
 
-        <footer class="addr-dashboard-footer addr-dashboard-footer--modern" dir="rtl">
+        <footer class="addr-dashboard-footer addr-dashboard-footer--modern<?= $editRow !== null ? ' addr-dashboard-footer--edit' : '' ?>" dir="rtl">
             <a class="btn btn--exit btn--pill-footer" href="index.php?r=dashboard">لوحة التحكم</a>
+            <?php if ($editRow !== null): ?>
+            <div class="addr-edit-actions addr-edit-actions--footer">
+                <button class="btn btn--save-edit btn--compact btn--pill btn--primary-glow btn--pill-footer" type="button" id="btn-save-changes">حفظ التغييرات</button>
+                <button class="btn btn--qr btn--compact btn--pill btn--footer-soft btn--pill-footer" type="button" id="btn-qr-placeholder" title="عرض بطاقة / QR">QR</button>
+                <button class="btn btn--delete-text" type="button" id="btn-delete-record">حذف السجل</button>
+            </div>
+            <a class="btn btn--scene btn--pill-footer btn--footer-soft" href="index.php?r=addresses">العودة للقائمة</a>
+            <?php else: ?>
             <a class="btn btn--scene btn--pill-footer btn--footer-soft" href="index.php?r=logout">تسجيل خروج</a>
             <button type="button" class="btn btn--scene btn--pill-footer" id="btn-new-scene">مشهد جديد</button>
             <button type="button" class="btn btn--scene btn--pill-footer btn--footer-soft" id="btn-export-png">تصدير PNG</button>
+            <?php endif; ?>
         </footer>
     </div>
 </main>
+<?php
+$editRecord = null;
+if ($editRow !== null) {
+    $editRecord = $editRow;
+    if (empty($editRecord['wilayah']) && !empty($editRecord['pc_province'])) {
+        $pp = (string) $editRecord['pc_province'];
+        if ($pp === 'B') {
+            $editRecord['wilayah'] = 'barqa';
+        } elseif ($pp === 'T') {
+            $editRecord['wilayah'] = 'tripolitania';
+        } elseif ($pp === 'F') {
+            $editRecord['wilayah'] = 'fezzan';
+        }
+    }
+}
+?>
 <script type="application/json" id="addr-page-config"><?= json_encode([
     'csrf' => $csrf,
     'apiUrl' => 'index.php?r=address_api',
     'editId' => $editId,
     'isEdit' => $editRow !== null,
+    'editMapZoom' => 17,
+    'editRecord' => $editRecord,
     'shabiyaToN' => $shabiyaToN,
     'wilayahSelectLabels' => [
         'barqa'        => \App\Models\LibyaAdmin::wilayahSelectLabel('barqa'),
@@ -467,5 +643,11 @@ $csrf = \App\Csrf::getToken();
         'tripolitania' => 1,
         'fezzan'       => 3,
     ],
+    'savedParcel' => ($editRow !== null && !empty($editRow['parcel_geojson']))
+        ? [
+            'geojson' => $editRow['parcel_geojson'],
+            'desc'    => $editRow['parcel_desc'] ?? '',
+        ]
+        : null,
 ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <?php require dirname(__DIR__) . '/partials/foot.php';

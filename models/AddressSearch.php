@@ -34,7 +34,7 @@ final class AddressSearch
     /**
      * Filtered, paginated query for the unified addresses list page.
      *
-     * @param array{q?: string, wilayah?: string, shabiya?: string, type?: string} $filters
+     * @param array{q?: string, wilayah?: string, shabiya?: string, locality?: string, type?: string} $filters
      * @return array{rows: list<array<string, mixed>>, total: int}
      */
     public static function query(array $filters, int $page = 1, int $perPage = self::DEFAULT_PER_PAGE): array
@@ -69,6 +69,12 @@ final class AddressSearch
             $params['shabiya'] = $shabiya;
         }
 
+        $locality = isset($filters['locality']) ? trim((string) $filters['locality']) : '';
+        if ($locality !== '') {
+            $where[] = 'a.`locality` = :locality';
+            $params['locality'] = $locality;
+        }
+
         $type = isset($filters['type']) ? trim((string) $filters['type']) : '';
         if ($type !== '' && in_array($type, ['residential', 'government', 'commercial'], true)) {
             $where[] = 'a.`type` = :type';
@@ -89,8 +95,10 @@ final class AddressSearch
         $sel = "SELECT a.`id`, a.`postal_code`, a.`owner_name`, a.`type`, a.`latitude`, a.`longitude`, a.`apartment_number`,
                        a.`wilayah`, a.`shabiya`, a.`locality`, a.`street_number`,
                        a.`pc_province`, a.`pc_area`, a.`pc_city`, a.`pc_sector`, a.`pc_property`,
-                       a.`created_at`, a.`created_by`
-                FROM `addresses` a"
+                       a.`parcel_geojson`, a.`parcel_desc`,
+                       a.`created_at`, a.`created_by`, u.`name` AS `created_by_name`
+                FROM `addresses` a
+                LEFT JOIN `users` u ON u.`id` = a.`created_by`"
             . $whereSql
             . ' ORDER BY a.`id` DESC LIMIT :lim OFFSET :off';
 
@@ -135,6 +143,15 @@ final class AddressSearch
             'pc_property'        => isset($r['pc_property']) && $r['pc_property'] !== null ? (int) $r['pc_property'] : null,
             'created_at'         => isset($r['created_at']) ? (string) $r['created_at'] : null,
             'created_by'         => isset($r['created_by']) ? (int) $r['created_by'] : null,
+            'created_by_name'    => isset($r['created_by_name']) && $r['created_by_name'] !== null
+                ? (string) $r['created_by_name']
+                : null,
+            'parcel_geojson'     => isset($r['parcel_geojson']) && $r['parcel_geojson'] !== null && $r['parcel_geojson'] !== ''
+                ? (string) $r['parcel_geojson']
+                : null,
+            'parcel_desc'        => isset($r['parcel_desc']) && $r['parcel_desc'] !== null && $r['parcel_desc'] !== ''
+                ? (string) $r['parcel_desc']
+                : null,
         ];
     }
 

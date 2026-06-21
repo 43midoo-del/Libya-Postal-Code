@@ -19,6 +19,7 @@
  *   POST index.php?r=boundary_delete        (CSRF)
  *   POST index.php?r=boundary_entity_create (CSRF)
  *   POST index.php?r=boundary_entity_add_grid (CSRF) — area|street + grid at click
+ *   POST index.php?r=boundary_color_scope   (CSRF) — bulk color within parent scope
  */
 (function () {
   'use strict';
@@ -75,9 +76,12 @@
   /* Default = OSM so the user always sees a map. The offline layer is wired
    * but only auto-falls-back when MBTiles is empty/missing. */
   var offline = L.tileLayer('index.php?r=tile&z={z}&x={x}&y={y}', {
-    maxZoom: maxZ, maxNativeZoom: 18, bounds: bounds,
+    maxZoom: maxZ, maxNativeZoom: 17, bounds: bounds,
     attribution: 'Libya Postal (offline) / OSM',
-    errorTileUrl: ''
+    errorTileUrl: '',
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    keepBuffer: 2
   });
   var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: maxZ, maxNativeZoom: 19, bounds: bounds,
@@ -103,34 +107,34 @@
     });
   }
 
+  function removeBaseLayers() {
+    if (map.hasLayer(osm)) { map.removeLayer(osm); }
+    if (map.hasLayer(satLayer)) { map.removeLayer(satLayer); }
+    if (map.hasLayer(offline)) { map.removeLayer(offline); }
+  }
+
   function setBaseLayer(kind) {
-    if (kind !== 'sat' && kind !== 'osm') {
+    if (kind === 'osm') {
+      kind = 'offline';
+    }
+    if (kind !== 'sat' && kind !== 'offline') {
       return;
     }
     currentBaseKind = kind;
+    removeBaseLayers();
     if (kind === 'sat') {
-      if (map.hasLayer(osm)) {
-        map.removeLayer(osm);
-      }
-      if (!map.hasLayer(satLayer)) {
-        satLayer.addTo(map);
-      }
+      satLayer.addTo(map);
     } else {
-      if (map.hasLayer(satLayer)) {
-        map.removeLayer(satLayer);
-      }
-      if (!map.hasLayer(osm)) {
-        osm.addTo(map);
-      }
+      offline.addTo(map);
     }
-    applyMapMaxZoomForBase(kind);
+    applyMapMaxZoomForBase(kind === 'sat' ? 'sat' : 'osm');
     syncBaseLayerUi();
     map.invalidateSize(false);
     if (typeof satLayer.redraw === 'function') {
       satLayer.redraw();
     }
-    if (typeof osm.redraw === 'function') {
-      osm.redraw();
+    if (typeof offline.redraw === 'function') {
+      offline.redraw();
     }
   }
 
@@ -140,7 +144,8 @@
     });
   });
 
-  osm.addTo(map);
+  offline.addTo(map);
+  currentBaseKind = 'offline';
   syncBaseLayerUi();
   map.fitBounds(bounds, { padding: [20, 20] });
 
@@ -205,10 +210,193 @@
     area:   'حي',
     street: 'شارع'
   };
+  var SCOPE_COLOR_LABELS = {
+    state:  'لون جميع الشعبيات داخل الولاية',
+    region: 'لون جميع الشعبيات داخل الولاية',
+    city:   'لون جميع المدن داخل الشعبية',
+    area:   'لون جميع الأحياء داخل المدينة',
+    street: 'لون جميع الشوارع داخل الحي'
+  };
+  var SCOPE_COLOR_HINTS = {
+    state:  'اختر ولاية من القائمة لتلوين جميع الشعبيات داخلها.',
+    region: 'اختر ولاية من تبويب «ولاية» أولاً لتعيين نطاق الشعبيات.',
+    city:   'اختر شعبية من تبويب «شعبية» أولاً لتعيين نطاق المدن.',
+    area:   'اختر مدينة من تبويب «مدينة» أولاً لتعيين نطاق الأحياء.',
+    street: 'اختر حيّاً من تبويب «حي» أولاً لتعيين نطاق الشوارع.'
+  };
   var propsLegend = document.getElementById('be-props-legend');
 
   function entityPlaceholder() {
     return ENTITY_PLACEHOLDERS[state.level] || 'اختر كياناً';
+  }
+
+  function resolveScopeParentId() {
+    if (state.level === 'state') {
+      return state.entityId > 0 ? state.entityId : 0;
+    }
+    return state.drillParentId > 0 ? state.drillParentId : 0;
+  }
+
+  function scopeColorDefault() {
+    var parentId = resolveScopeParentId();
+    if (!parentId) {
+      return '#0ea5e9';
+    }
+    if (state.level === 'state' && entitySel && entitySel.selectedIndex >= 0) {
+      var op = entitySel.options[entitySel.selectedIndex];
+      if (op && op.dataset.code) {
+        return defaultColorForProps({ code: op.dataset.code, color: op.dataset.color || '' });
+      }
+    }
+    if (colorIn && colorIn.value) {
+      return colorIn.value;
+    }
+    return '#0ea5e9';
+  }
+
+  function syncScopeColorUi() {
+    var parentId = resolveScopeParentId();
+    var enabled = parentId > 0;
+    if (scopeColorLabel) {
+      scopeColorLabel.textContent = SCOPE_COLOR_LABELS[state.level] || 'لون حدود النطاق';
+    }
+    if (scopeColorHint) {
+      scopeColorHint.textContent = enabled
+        ? ('يُلوَّن على الخريطة فوراً — اضغط «تطبيق على الكل» للحفظ في قاعدة البيانات.')
+        : (SCOPE_COLOR_HINTS[state.level] || 'حدّد النطاق أولاً.');
+    }
+    if (scopeColorWrap) {
+      scopeColorWrap.classList.toggle('is-disabled', !enabled);
+    }
+    if (scopeColorIn) {
+      scopeColorIn.disabled = !enabled;
+      if (enabled && !scopeColorIn.dataset.userPicked) {
+        scopeColorIn.value = scopeColorDefault();
+      }
+    }
+    if (scopeColorApply) {
+      scopeColorApply.disabled = !enabled;
+    }
+  }
+
+  function paintLayerWithColor(layer, color) {
+    if (!layer) { return; }
+    if (typeof layer.setStyle === 'function') {
+      var fillOp = 0.2;
+      try {
+        var opts = layer.options || {};
+        if (typeof opts.fillOpacity === 'number') {
+          fillOp = opts.fillOpacity;
+        }
+      } catch (eOp) {}
+      layer.setStyle({ color: color, fillColor: color, fillOpacity: fillOp });
+    }
+    if (typeof layer.eachLayer === 'function') {
+      layer.eachLayer(function (sub) {
+        paintLayerWithColor(sub, color);
+      });
+    }
+  }
+
+  function applyScopeColorPreview(color) {
+    var parentId = resolveScopeParentId();
+    if (!parentId || !color) { return; }
+    var level = state.level;
+
+    function paintGroup(group) {
+      if (!group || !group.eachLayer) { return; }
+      group.eachLayer(function (layer) {
+        paintLayerWithColor(layer, color);
+      });
+    }
+
+    if (level === 'state') {
+      if (state.statesOverviewLayer && state.statesOverviewLayer.eachLayer) {
+        state.statesOverviewLayer.eachLayer(function (layer) {
+          var tip = layer.getTooltip && layer.getTooltip();
+          var content = tip && tip.getContent ? String(tip.getContent() || '') : '';
+          var op = entitySel && entitySel.selectedIndex >= 0
+            ? entitySel.options[entitySel.selectedIndex] : null;
+          var code = op && op.dataset.code ? String(op.dataset.code).charAt(0).toUpperCase() : '';
+          if (code && content.indexOf(code) === 0) {
+            paintLayerWithColor(layer, color);
+          }
+        });
+      }
+      if (state.regionsOverviewLayer && state.regionsOverviewLayer.eachLayer) {
+        state.regionsOverviewLayer.eachLayer(function (layer) {
+          var prov = layer.feature && layer.feature.properties
+            ? String(layer.feature.properties.province || layer.feature.properties.code || '').charAt(0).toUpperCase()
+            : '';
+          var op = entitySel && entitySel.selectedIndex >= 0
+            ? entitySel.options[entitySel.selectedIndex] : null;
+          var code = op && op.dataset.code ? String(op.dataset.code).charAt(0).toUpperCase() : '';
+          if (code && prov === code) {
+            paintLayerWithColor(layer, color);
+          }
+        });
+      }
+      return;
+    }
+
+    paintGroup(state.siblingsLayer);
+    paintGroup(state.pickLayer);
+    if (state.currentLayer && state.currentLayer.setStyle) {
+      state.currentLayer.setStyle({ color: color, fillColor: color });
+    }
+  }
+
+  function postScopeColor() {
+    var parentId = resolveScopeParentId();
+    var color = scopeColorIn ? scopeColorIn.value : '';
+    if (!parentId || !color) {
+      setStatus('حدّد النطاق واللون أولاً.', true);
+      return Promise.resolve();
+    }
+    var fd = new FormData();
+    fd.append('csrf_token', csrf);
+    fd.append('level', state.level);
+    fd.append('parent_id', String(parentId));
+    fd.append('color', color);
+    if (scopeColorApply) { scopeColorApply.disabled = true; }
+    return fetch(apiUrl('boundary_color_scope'), { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) {
+        return parseJsonResponse(r).then(function (data) {
+          if (!r.ok || !data || data.ok === false) {
+            throw new Error((data && data.message) || 'فشل تطبيق اللون.');
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        setStatus((data && data.message) || 'تم تطبيق اللون.', false);
+        if (data && data.colors && window.ProvinceColors) {
+          window.ProvinceColors.setColors(data.colors, false);
+          syncProvinceColorsFromGlobal();
+        }
+        if (entitySel) {
+          Array.prototype.forEach.call(entitySel.options, function (op) {
+            if (op.value) { op.dataset.color = color; }
+          });
+        }
+        return loadOverview().then(function () {
+          var parent = state.drillParentId;
+          if (parent) {
+            return drawSiblingsLayer(parent).then(function () {
+              return loadPickLayer(state.level, parent);
+            });
+          }
+          if (state.entityId) {
+            return loadCurrentBoundary();
+          }
+        });
+      })
+      .catch(function (err) {
+        setStatus(err.message || 'فشل تطبيق اللون.', true);
+      })
+      .finally(function () {
+        syncScopeColorUi();
+      });
   }
 
   function boundaryScopeParams(level, parentId) {
@@ -228,10 +416,19 @@
     if (entitySel && entitySel.options.length && entitySel.options[0].value === '') {
       entitySel.options[0].textContent = entityPlaceholder();
     }
+    if (scopeColorIn) {
+      delete scopeColorIn.dataset.userPicked;
+    }
+    syncScopeColorUi();
   }
   var nameIn = document.getElementById('be-prop-name');
   var codeIn = document.getElementById('be-prop-code');
   var colorIn = document.getElementById('be-prop-color');
+  var scopeColorWrap = document.getElementById('be-scope-color-wrap');
+  var scopeColorLabel = document.getElementById('be-scope-color-label');
+  var scopeColorIn = document.getElementById('be-scope-color');
+  var scopeColorApply = document.getElementById('be-scope-color-apply');
+  var scopeColorHint = document.getElementById('be-scope-color-hint');
   var saveBtn = document.getElementById('be-save-btn');
   var deleteBtn = document.getElementById('be-delete-btn');
   var regenGridBtn = document.getElementById('be-regen-grid-btn');
@@ -918,8 +1115,10 @@
     state.entityId = 0;
     state.entityName = '';
     if (entitySel) { entitySel.value = ''; }
+    if (scopeColorIn) { delete scopeColorIn.dataset.userPicked; }
     removeCurrentLayer();
     setEntityProps(null);
+    syncScopeColorUi();
     updateSaveButton();
     syncDeleteButton();
     syncAddChildUi();
@@ -1537,7 +1736,8 @@
 
   function featureStyle(p, level, selected) {
     var isGrid = !!(p && p.is_grid);
-    var color = (p && p.color) || (isGrid ? '#f59e0b' : '#38bdf8');
+    var customColor = (p && p.color) ? String(p.color) : '';
+    var color = customColor || (isGrid ? '#f59e0b' : '#38bdf8');
     if (selected) {
       return {
         color: color,
@@ -1548,12 +1748,14 @@
         dashArray: isGrid ? '4,3' : null
       };
     }
+    var stroke = customColor || (isGrid ? '#b45309' : '#94a3b8');
+    var fill = customColor || (isGrid ? '#fbbf24' : '#94a3b8');
     return {
-      color: isGrid ? '#b45309' : (p.color || '#94a3b8'),
+      color: stroke,
       weight: isGrid ? 1.6 : 1.2,
       opacity: 0.85,
-      fillColor: isGrid ? '#fbbf24' : (p.color || '#94a3b8'),
-      fillOpacity: isGrid ? 0.14 : 0.06,
+      fillColor: fill,
+      fillOpacity: customColor ? (isGrid ? 0.2 : 0.12) : (isGrid ? 0.14 : 0.06),
       dashArray: isGrid ? '5,4' : '4,4',
       interactive: true
     };
@@ -1565,11 +1767,12 @@
     if (isPoint && f.geometry && f.geometry.coordinates) {
       var lng = f.geometry.coordinates[0];
       var lat = f.geometry.coordinates[1];
+      var ptFill = (p && p.color) ? String(p.color) : '#fcd34d';
       var cm = L.circleMarker([lat, lng], {
         radius: selectedId && Number(p.entity_id) === Number(selectedId) ? 8 : 6,
         color: '#0c4a6e',
         weight: 2,
-        fillColor: '#fcd34d',
+        fillColor: ptFill,
         fillOpacity: 0.92
       });
       cm.bindTooltip(p.name || '', { sticky: true, direction: 'top' });
@@ -1577,7 +1780,7 @@
         radius: selectedId && Number(p.entity_id) === Number(selectedId) ? 8 : 6,
         color: '#0c4a6e',
         weight: 2,
-        fillColor: '#fcd34d',
+        fillColor: ptFill,
         fillOpacity: 0.92
       };
       cm.on('mouseover', function () {
@@ -1772,6 +1975,9 @@
           return;
         }
         return loadPickLayer(nextLevel, state.drillParentId).then(function () {
+          if (scopeColorIn && scopeColorIn.dataset.userPicked && resolveScopeParentId()) {
+            applyScopeColorPreview(scopeColorIn.value);
+          }
           if (nextLevel === 'city' || nextLevel === 'area' || nextLevel === 'street') {
             return drawSiblingsLayer(state.drillParentId).then(function (fc) {
               if (fc) { flyToFeatureCollection(fc, nextLevel); }
@@ -1804,6 +2010,10 @@
     state.entityName = op
       ? op.textContent.replace(/^[●\s]+/, '').replace(/\s*\([^)]*\)\s*$/, '').trim()
       : '';
+    if (scopeColorIn) {
+      delete scopeColorIn.dataset.userPicked;
+    }
+    syncScopeColorUi();
     setEntityProps({
       name: state.entityName,
       code: op ? (op.dataset.code || '') : '',
@@ -1824,6 +2034,9 @@
         return;
       }
       return drawSiblingsLayer(parentId).then(function (fc) {
+        if (scopeColorIn && scopeColorIn.dataset.userPicked && resolveScopeParentId()) {
+          applyScopeColorPreview(scopeColorIn.value);
+        }
         var match = (fc && fc.features || []).find(function (f) {
           var p = f.properties || {};
           if (Number(p.entity_id) !== Number(id)) { return false; }
@@ -2113,6 +2326,19 @@
     }
     updateSaveButton();
   });
+  }
+
+  if (scopeColorIn) {
+    scopeColorIn.addEventListener('input', function () {
+      scopeColorIn.dataset.userPicked = '1';
+      applyScopeColorPreview(scopeColorIn.value);
+    });
+  }
+
+  if (scopeColorApply) {
+    scopeColorApply.addEventListener('click', function () {
+      postScopeColor();
+    });
   }
 
   if (nameIn) {

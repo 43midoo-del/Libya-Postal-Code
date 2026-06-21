@@ -79,7 +79,6 @@ if ($filterLines === []) {
                     <col class="col-owner">
                     <col class="col-type">
                     <col class="col-place">
-                    <col class="col-locality">
                     <col class="col-coords">
                 </colgroup>
                 <thead>
@@ -88,19 +87,14 @@ if ($filterLines === []) {
                         <th class="col-code">الكود</th>
                         <th class="col-owner">المالك</th>
                         <th class="col-type">النوع</th>
-                        <th class="col-place">الولاية / الشعبية</th>
-                        <th class="col-locality">المنطقة</th>
+                        <th class="col-place">العنوان</th>
                         <th class="col-coords">الإحداثيات</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($rows as $i => $row):
-                    $wKey = (string) ($row['wilayah'] ?? '');
-                    $wLbl = $wKey !== '' && isset($wLabels[$wKey]) ? $wLabels[$wKey] : '—';
-                    $shLbl = (string) ($row['shabiya'] ?? '');
-                    $place = $shLbl !== '' ? ($wLbl . ' · ' . $shLbl) : $wLbl;
+                    $place = \App\Models\Address::formatPlaceSequence($row);
                     $owner = trim((string) ($row['owner_name'] ?? ''));
-                    $locality = trim((string) ($row['locality'] ?? ''));
                     $coords = number_format((float) $row['latitude'], 5, '.', '')
                         . ', '
                         . number_format((float) $row['longitude'], 5, '.', '');
@@ -111,7 +105,6 @@ if ($filterLines === []) {
                         <td class="col-owner<?= $owner === '' ? ' is-empty' : '' ?>"><?= $owner !== '' ? htmlspecialchars($owner, ENT_QUOTES, 'UTF-8') : '—' ?></td>
                         <td class="col-type"><?= htmlspecialchars(\App\Models\Address::typeLabelAr((string) $row['type']), ENT_QUOTES, 'UTF-8') ?></td>
                         <td class="col-place"><?= htmlspecialchars($place, ENT_QUOTES, 'UTF-8') ?></td>
-                        <td class="col-locality"><?= $locality !== '' ? htmlspecialchars($locality, ENT_QUOTES, 'UTF-8') : '—' ?></td>
                         <td class="col-coords mono" dir="ltr"><?= htmlspecialchars($coords, ENT_QUOTES, 'UTF-8') ?></td>
                     </tr>
                 <?php endforeach; ?>
@@ -130,7 +123,7 @@ if ($filterLines === []) {
         <button type="button" class="btn btn-report btn-report--close" onclick="window.close()">إغلاق</button>
         <a class="btn btn-report btn-report--back" href="index.php?r=addresses">رجوع للقائمة</a>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
+    <script src="<?= htmlspecialchars(\App\Assets::html2pdfJs(), ENT_QUOTES, 'UTF-8') ?>"></script>
     <script>
     (function () {
       'use strict';

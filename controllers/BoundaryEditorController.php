@@ -490,72 +490,84 @@ final class BoundaryEditorController extends BaseController
         return ['type' => 'FeatureCollection', 'features' => $out];
     }
 
-    /** @return array{type:string, features:list<array<string,mixed>>} */
-    private function cityListWithGrid(int $regionId): array
+    /**
+     * Prefer auto-generated grid cells (is_grid) over saved boundaries for the same entity.
+     *
+     * @param array{type:string,features:list<array<string,mixed>>} $savedFc
+     * @param array{type:string,features:list<array<string,mixed>>} $gridFc
+     * @return array{type:string,features:list<array<string,mixed>>}
+     */
+    private function mergeGridPreferredFeatures(array $savedFc, array $gridFc): array
     {
-        $saved = Boundary::asFeatureCollection('city', $regionId);
-        $grid = $this->cityGridFallback($regionId);
-
-        $out = [];
-        $used = [];
-        foreach ($saved['features'] as $feature) {
+        $savedById = [];
+        foreach ($savedFc['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
             if ($eid > 0) {
-                $used[$eid] = true;
+                $savedById[$eid] = $feature;
+            }
+        }
+
+        $out = [];
+        $gridIds = [];
+        foreach ($gridFc['features'] as $feature) {
+            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
+            if ($eid > 0) {
+                $gridIds[$eid] = true;
+                if (isset($savedById[$eid])) {
+                    $savedProps = is_array($savedById[$eid]['properties'] ?? null)
+                        ? $savedById[$eid]['properties']
+                        : [];
+                    $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+                    if (!empty($savedProps['color'])) {
+                        $props['color'] = $savedProps['color'];
+                    }
+                    if (!empty($savedProps['code'])) {
+                        $props['code'] = $savedProps['code'];
+                    }
+                    if (!empty($savedProps['name'])) {
+                        $props['name'] = $savedProps['name'];
+                    }
+                    $feature['properties'] = $props;
+                }
             }
             $out[] = $feature;
         }
-        foreach ($grid['features'] as $feature) {
+        foreach ($savedFc['features'] as $feature) {
             $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            if ($eid > 0 && !isset($used[$eid])) {
-                $out[] = $feature;
+            if ($eid > 0 && isset($gridIds[$eid])) {
+                continue;
             }
+            $out[] = $feature;
         }
 
         return ['type' => 'FeatureCollection', 'features' => $out];
+    }
+
+    /** @return array{type:string, features:list<array<string,mixed>>} */
+    private function cityListWithGrid(int $regionId): array
+    {
+        return $this->mergeGridPreferredFeatures(
+            Boundary::asFeatureCollection('city', $regionId),
+            $this->cityGridFallback($regionId)
+        );
     }
 
     /** @return array{type:string, features:list<array<string,mixed>>} */
     private function areaListWithGrid(int $cityId, ?int $withinAreaId = null): array
     {
-        $saved = Boundary::asFeatureCollection('area', $cityId, $withinAreaId);
-        $grid = $this->areaGridFallback($cityId, $withinAreaId);
-
-        $out = [];
-        $used = [];
-        foreach ($saved['features'] as $feature) {
-            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            if ($eid > 0) {
-                $used[$eid] = true;
-            }
-            $out[] = $feature;
-        }
-        foreach ($grid['features'] as $feature) {
-            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            if ($eid > 0 && !isset($used[$eid])) {
-                $out[] = $feature;
-            }
-        }
-
-        return ['type' => 'FeatureCollection', 'features' => $out];
+        return $this->mergeGridPreferredFeatures(
+            Boundary::asFeatureCollection('area', $cityId, $withinAreaId),
+            $this->areaGridFallback($cityId, $withinAreaId)
+        );
     }
 
     /** @return array{type:string, features:list<array<string,mixed>>} */
     private function streetListWithGrid(int $areaId): array
     {
-        $saved = Boundary::asFeatureCollection('street', $areaId);
-        $savedIds = [];
-        foreach ($saved['features'] as $feature) {
-            $savedIds[(int) ($feature['properties']['entity_id'] ?? 0)] = true;
-        }
-        foreach ($this->streetGridFallback($areaId)['features'] as $feature) {
-            $eid = (int) ($feature['properties']['entity_id'] ?? 0);
-            if ($eid > 0 && !isset($savedIds[$eid])) {
-                $saved['features'][] = $feature;
-            }
-        }
-
-        return $saved;
+        return $this->mergeGridPreferredFeatures(
+            Boundary::asFeatureCollection('street', $areaId),
+            $this->streetGridFallback($areaId)
+        );
     }
 
     /** @return array{type:string, features:list<array<string,mixed>>} */
@@ -1702,6 +1714,111 @@ final class BoundaryEditorController extends BaseController
             http_response_code(500);
             echo json_encode(['ok' => false, 'message' => 'فشل غير متوقع: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
         }
+    }
+
+    /**
+     * POST — apply one color to every boundary (saved or grid) within the active scope.
+     *   state  + parent_id = state entity id → all shabiyat in that wilayah
+     *   region + parent_id = state id        → all shabiyat in wilayah
+     *   city   + parent_id = region id       → all cities in shabiyah
+     *   area   + parent_id = city id         → all areas in city
+     *   street + parent_id = area id         → all streets in area
+     */
+    public function apiColorScope(): void
+    {
+        $this->guardPost();
+        header('Content-Type: application/json; charset=utf-8');
+        try {
+            $level = (string) ($_POST['level'] ?? '');
+            $parentId = isset($_POST['parent_id']) && $_POST['parent_id'] !== '' ? (int) $_POST['parent_id'] : 0;
+            $color = Boundary::normalizeColor(isset($_POST['color']) ? (string) $_POST['color'] : null);
+            if (!in_array($level, Boundary::LEVELS, true) || $parentId < 1 || $color === null) {
+                throw new RuntimeException('معاملات غير صالحة — اختر النطاق واللون.');
+            }
+
+            $uid = SessionAuth::userId();
+            $count = 0;
+
+            if ($level === 'state') {
+                Boundary::setProvinceColor($parentId, $color);
+                $pdo = Database::getInstance()->getPdo();
+                $st = $pdo->prepare('SELECT COUNT(*) FROM regions WHERE state_id = :sid');
+                $st->execute(['sid' => $parentId]);
+                $count = (int) $st->fetchColumn();
+                echo json_encode([
+                    'ok'      => true,
+                    'message' => 'تم تلوين جميع الشعبيات داخل الولاية (' . $count . ').',
+                    'count'   => $count,
+                    'colors'  => Boundary::provinceColors(),
+                ], JSON_UNESCAPED_UNICODE);
+
+                return;
+            }
+
+            $fc = $this->scopeFeatureCollection($level, $parentId);
+            foreach ($fc['features'] as $feature) {
+                if (!is_array($feature)) {
+                    continue;
+                }
+                $props = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+                $entityId = (int) ($props['entity_id'] ?? 0);
+                if ($entityId < 1) {
+                    continue;
+                }
+                $geom = $feature['geometry'] ?? null;
+                if (!is_array($geom) || ($geom['type'] ?? '') === 'Point') {
+                    continue;
+                }
+                $code = isset($props['code']) && $props['code'] !== null && $props['code'] !== ''
+                    ? (string) $props['code'] : null;
+                if (Boundary::find($level, $entityId) !== null) {
+                    Boundary::updateColorOnly($level, $entityId, $color, $uid);
+                } else {
+                    Boundary::save(
+                        $level,
+                        $entityId,
+                        json_encode($geom, JSON_UNESCAPED_UNICODE),
+                        $code,
+                        $color,
+                        $uid
+                    );
+                }
+                $count++;
+            }
+
+            $message = match ($level) {
+                'region' => 'تم تلوين جميع الشعبيات في النطاق (' . $count . ').',
+                'city'   => 'تم تلوين جميع المدن في النطاق (' . $count . ').',
+                'area'   => 'تم تلوين جميع الأحياء في النطاق (' . $count . ').',
+                'street' => 'تم تلوين جميع الشوارع في النطاق (' . $count . ').',
+                default  => 'تم تطبيق اللون (' . $count . ').',
+            };
+
+            echo json_encode([
+                'ok'      => true,
+                'message' => $message,
+                'count'   => $count,
+                'colors'  => Boundary::provinceColors(),
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (RuntimeException $e) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        } catch (\Throwable $e) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'message' => 'فشل غير متوقع: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+        }
+    }
+
+    /** @return array{type:string, features:list<array<string,mixed>>} */
+    private function scopeFeatureCollection(string $level, int $parentId): array
+    {
+        return match ($level) {
+            'region' => $this->regionListWithGrid($parentId),
+            'city'   => $this->cityListWithGrid($parentId),
+            'area'   => $this->areaListWithGrid($parentId),
+            'street' => $this->streetListWithGrid($parentId),
+            default  => ['type' => 'FeatureCollection', 'features' => []],
+        };
     }
 
     public function apiDelete(): void

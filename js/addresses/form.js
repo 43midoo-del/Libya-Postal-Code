@@ -95,7 +95,10 @@
   var ctxWilayah = document.getElementById('ctx-wilayah');
   var ctxProvince = document.getElementById('ctx-province');
 
-  var contextBarLiveFromMap = !!cfg.isEdit;
+  var editMapZoom = cfg.isEdit && cfg.editMapZoom != null ? parseInt(cfg.editMapZoom, 10) || 17 : 15;
+  var contextBarLiveFromMap = true;
+  var editCommittedHoodVal = '';
+  var editHoodChangeSuppress = 0;
   var contextBarWilayahPinned = false;
   var wilayahChangeSuppress = 0;
   var shabiyaChangeSuppress = 0;
@@ -141,9 +144,12 @@
   }
 
   function resetCityAreaBranchAndDatalist() {
+    blocksFetchGen += 1;
+    currentCityDbId = 0;
     if (cityAreaIn) { cityAreaIn.value = ''; }
     resetNeighborhoodSelect();
     rebuildCityAreaDatalist([]);
+    if (window.AddrSaved) { window.AddrSaved.clear(); }
   }
 
   function getNeighborhoodLabel() {
@@ -156,7 +162,6 @@
   }
 
   function hasPlacedAddressMarker() {
-    if (cfg.isEdit) { return false; }
     if (window.AddrMap && typeof window.AddrMap.hasPlacedAddressMarker === 'function') {
       return window.AddrMap.hasPlacedAddressMarker();
     }
@@ -175,7 +180,7 @@
   }
 
   function flyToSelectedBlock() {
-    if (cfg.isEdit || hasPlacedAddressMarker() || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
+    if (hasPlacedAddressMarker() || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
     var opt = neighborhoodIn.options[neighborhoodIn.selectedIndex];
     if (!opt || !opt.value) { return; }
     var parsed = parseBlockOptionValue(opt.value);
@@ -186,7 +191,7 @@
   }
 
   function focusMapOnSelectedCity(data, flyTo) {
-    if (cfg.isEdit || !window.AddrMap) {
+    if (!window.AddrMap) {
       return;
     }
     var allowFly = flyTo !== false && !hasPlacedAddressMarker();
@@ -196,6 +201,21 @@
     }
     if (!cityId && currentCityDbId > 0) {
       cityId = currentCityDbId;
+    }
+    if (cityId > 0 && typeof window.AddrMap.showPilotDernaCityBoundaries === 'function'
+        && window.MapCore && typeof window.MapCore.isPilotShabiya === 'function') {
+      var shNamePilot = shabiyaSel ? String(shabiyaSel.value || '').trim() : '';
+      var rowPilot = findShabiyaRowForCurrentWilayah(shNamePilot);
+      var codePilot = rowPilot ? String(rowPilot.code || '').trim() : '';
+      var cnPilot = cityAreaIn ? String(cityAreaIn.value || '').trim() : '';
+      if (window.MapCore.isPilotShabiya(shNamePilot, codePilot) && cnPilot === 'درنة') {
+        window.AddrMap.showPilotDernaCityBoundaries(cityId, {
+          flyTo: allowFly,
+          hidePlaceMarkers: true,
+          cityName: cnPilot
+        });
+        return;
+      }
     }
     if (cityId > 0 && typeof window.AddrMap.showCityChildBoundaries === 'function') {
       window.AddrMap.showCityChildBoundaries(cityId, {
@@ -216,7 +236,10 @@
   }
 
   function showSelectedBlockGrid() {
-    if (cfg.isEdit || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') {
+    if (!neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') {
+      return;
+    }
+    if (!cityAreaIn || !String(cityAreaIn.value || '').trim()) {
       return;
     }
     var allowFly = !hasPlacedAddressMarker();
@@ -262,6 +285,7 @@
       if (sectorIn) { sectorIn.value = 'S'; }
       var stClear = document.getElementById('street_number');
       if (stClear) { stClear.value = ''; }
+      loadSavedForCurrentHood();
       updatePreview();
       updateContextBar();
       return;
@@ -276,6 +300,7 @@
         ? String(opt.getAttribute('data-name') || '').trim()
         : '';
     }
+    loadSavedForCurrentHood();
     updatePreview();
     updateContextBar();
   }
@@ -404,6 +429,18 @@
     return c || h || '';
   }
 
+  /* Show / clear the already-saved addresses (points + parcels) of the selected hood. */
+  function loadSavedForCurrentHood() {
+    if (!window.AddrSaved) { return; }
+    var sh = shabiyaSel ? String(shabiyaSel.value || '').trim() : '';
+    var loc = buildLocality();
+    if (sh && loc.indexOf(' | ') >= 0) {
+      window.AddrSaved.loadForHood(sh, loc);
+    } else {
+      window.AddrSaved.clear();
+    }
+  }
+
   function selectedWilayahAr() {
     if (!wilayahSel) { return '—'; }
     var opt = wilayahSel.options[wilayahSel.selectedIndex];
@@ -427,7 +464,6 @@
   }
 
   function updateContextBar() {
-    if (cfg.isEdit) { return; }
     if (!ctxPlace && !ctxWilayah) { return; }
     if (!contextBarLiveFromMap) {
       clearContextBarValues();
@@ -569,9 +605,12 @@
         syncProvinceFromWilayah();
         return;
       }
-      if (!cfg.isEdit) {
-        contextBarWilayahPinned = true;
-        resetMapForHierarchyChange('wilayah');
+      if (cfg.isEdit) {
+        syncProvinceFromWilayah();
+        return;
+      }
+      contextBarWilayahPinned = true;
+      resetMapForHierarchyChange('wilayah');
         var wkCh = wilayahSel.value ? String(wilayahSel.value).trim() : '';
         if (wkCh && window.AddrMap && typeof window.AddrMap.showWilayahRegionGrids === 'function') {
           window.AddrMap.showWilayahRegionGrids(wkCh);
@@ -580,7 +619,6 @@
             window.AddrMap.fitLibya();
           }
         }
-      }
       syncProvinceFromWilayah();
       refillShabiyat(false);
       resetCityAreaBranchAndDatalist();
@@ -624,9 +662,12 @@
         updateContextBar();
         return;
       }
+      if (cfg.isEdit) {
+        return;
+      }
       resetCityAreaBranchAndDatalist();
       var pv = shabiyaSel.value ? String(shabiyaSel.value).trim() : '';
-      if (!cfg.isEdit && !pv) {
+      if (!pv) {
         resetMapForHierarchyChange('shabiya');
         var wkBack = wilayahSel && wilayahSel.value ? String(wilayahSel.value).trim() : '';
         if (wkBack && window.AddrMap && typeof window.AddrMap.showWilayahRegionGrids === 'function') {
@@ -637,8 +678,19 @@
         updateContextBar();
         return;
       }
-      if (!cfg.isEdit && pv) {
-        resetMapForHierarchyChange('shabiya');
+      if (pv) {
+        var rowShPilot = findShabiyaRowForCurrentWilayah(pv);
+        var codePilot = rowShPilot ? String(rowShPilot.code || '').trim() : '';
+        if (window.MapCore && typeof window.MapCore.blockNonPilotShabiya === 'function'
+            && window.MapCore.blockNonPilotShabiya(pv, codePilot)) {
+          beginShabiyaProgrammatic();
+          shabiyaSel.value = '';
+          endShabiyaProgrammatic();
+          syncAreaFromShabiya();
+          updatePreview();
+          updateContextBar();
+          return;
+        }
         var provLetter = provinceIn ? String(provinceIn.value || '').trim() : '';
         if (!provLetter && wilayahSel) {
           provLetter = WKEY_TO_PROV[wilayahSel.value] || 'T';
@@ -671,19 +723,196 @@
   if (cityAreaIn) {
     cityAreaIn.addEventListener('input', updateContextBar);
     cityAreaIn.addEventListener('change', function () {
-      if (!cfg.isEdit) {
-        resetMapForHierarchyChange('city');
-        loadCityBlocksForCurrentCity();
-      }
+      if (cfg.isEdit) { return; }
+      resetMapForHierarchyChange('city');
+      loadCityBlocksForCurrentCity();
       updateContextBar();
       try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eC) {}
     });
   }
-  if (neighborhoodIn) {
-    neighborhoodIn.addEventListener('change', function () {
+  function getNeighborhoodSelectValue() {
+    return neighborhoodIn ? String(neighborhoodIn.value || '') : '';
+  }
+
+  function beginEditHoodSuppress() { editHoodChangeSuppress++; }
+  function endEditHoodSuppress() { editHoodChangeSuppress = Math.max(0, editHoodChangeSuppress - 1); }
+
+  function revertNeighborhoodSelect(toVal) {
+    if (!neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
+    beginEditHoodSuppress();
+    try {
+      if (!toVal) {
+        neighborhoodIn.selectedIndex = 0;
+      } else {
+        for (var ri = 0; ri < neighborhoodIn.options.length; ri++) {
+          if (neighborhoodIn.options[ri].value === toVal) {
+            neighborhoodIn.selectedIndex = ri;
+            break;
+          }
+        }
+      }
       syncSelectedBlockFromSelect();
       showSelectedBlockGrid();
-      try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eN) {}
+      updateContextBar();
+    } finally {
+      endEditHoodSuppress();
+    }
+  }
+
+  function clearEditLocationAndParcel() {
+    if (window.MapCore && typeof window.MapCore.clearAddressMarker === 'function') {
+      window.MapCore.clearAddressMarker();
+    }
+    if (window.MapParcel && typeof window.MapParcel.clearAll === 'function') {
+      window.MapParcel.clearAll();
+    }
+    var hint = document.getElementById('map-parcel-desc');
+    if (hint) { hint.value = ''; }
+  }
+
+  function finishNeighborhoodSelectionChange() {
+    syncSelectedBlockFromSelect();
+    showSelectedBlockGrid();
+    try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eFin) {}
+    editCommittedHoodVal = getNeighborhoodSelectValue();
+  }
+
+  function neighborhoodOptionLabelForValue(val) {
+    if (!neighborhoodIn || neighborhoodIn.tagName !== 'SELECT' || !val) { return ''; }
+    for (var li = 0; li < neighborhoodIn.options.length; li++) {
+      var oL = neighborhoodIn.options[li];
+      if (oL.value === val) {
+        return String(oL.textContent || '').trim();
+      }
+    }
+    return '';
+  }
+
+  var hoodChangeOverlay = document.getElementById('addr-hood-change-overlay');
+  var hoodChangeMessage = document.getElementById('addr-hood-change-message');
+  var hoodChangeConfirm = document.getElementById('addr-hood-change-confirm');
+  var hoodChangeCancel = document.getElementById('addr-hood-change-cancel');
+  var hoodChangeBackdrop = document.getElementById('addr-hood-change-backdrop');
+  var hoodChangeOnConfirm = null;
+  var hoodChangeOnCancel = null;
+
+  function closeHoodChangeModal() {
+    if (!hoodChangeOverlay) { return; }
+    hoodChangeOverlay.hidden = true;
+    document.body.style.overflow = '';
+    hoodChangeOnConfirm = null;
+    hoodChangeOnCancel = null;
+  }
+
+  function openHoodChangeModal(hoodLabel, onConfirm, onCancel) {
+    if (!hoodChangeOverlay || !hoodChangeMessage) {
+      if (typeof onConfirm === 'function' && window.confirm('هل ترغب بحذف حدود وموقع الحالي والانتقال إلى الحي المحدّد؟')) {
+        onConfirm();
+      } else if (typeof onCancel === 'function') {
+        onCancel();
+      }
+      return;
+    }
+    var lbl = hoodLabel ? String(hoodLabel).trim() : 'الذي تم اختياره';
+    hoodChangeMessage.textContent =
+      'هل ترغب بحذف حدود وموقع الحالي والانتقال إلى الحي (' + lbl + ') لتحديد عنوان ورسم حدود جديدة؟';
+    hoodChangeOnConfirm = typeof onConfirm === 'function' ? onConfirm : null;
+    hoodChangeOnCancel = typeof onCancel === 'function' ? onCancel : null;
+    hoodChangeOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    if (hoodChangeConfirm) { try { hoodChangeConfirm.focus(); } catch (eHcF) {} }
+  }
+
+  if (hoodChangeConfirm) {
+    hoodChangeConfirm.addEventListener('click', function () {
+      var fn = hoodChangeOnConfirm;
+      closeHoodChangeModal();
+      if (fn) { fn(); }
+    });
+  }
+  if (hoodChangeCancel) {
+    hoodChangeCancel.addEventListener('click', function () {
+      var fn = hoodChangeOnCancel;
+      closeHoodChangeModal();
+      if (fn) { fn(); }
+    });
+  }
+  if (hoodChangeBackdrop) {
+    hoodChangeBackdrop.addEventListener('click', function () {
+      var fn = hoodChangeOnCancel;
+      closeHoodChangeModal();
+      if (fn) { fn(); }
+    });
+  }
+
+  function confirmEditHoodChangeIfNeeded(prevVal, newVal, hoodLabel, onProceed) {
+    if (!cfg.isEdit || editHoodChangeSuppress > 0 || prevVal === newVal) {
+      if (typeof onProceed === 'function') { onProceed(false); }
+      return;
+    }
+    openHoodChangeModal(
+      hoodLabel || neighborhoodOptionLabelForValue(newVal) || 'الذي تم اختياره',
+      function () {
+        clearEditLocationAndParcel();
+        if (typeof onProceed === 'function') { onProceed(true); }
+      },
+      function () {
+        revertNeighborhoodSelect(prevVal);
+      }
+    );
+  }
+
+  function selectNeighborhoodByValue(wantVal, hoodLabel) {
+    if (!neighborhoodIn || neighborhoodIn.tagName !== 'SELECT' || !wantVal) { return false; }
+    var prevVal = editCommittedHoodVal;
+    function applySelect() {
+      for (var bi = 0; bi < neighborhoodIn.options.length; bi++) {
+        if (neighborhoodIn.options[bi].value === wantVal) {
+          neighborhoodIn.selectedIndex = bi;
+          finishNeighborhoodSelectionChange();
+          return true;
+        }
+      }
+      return false;
+    }
+    if (cfg.isEdit && editHoodChangeSuppress === 0 && wantVal !== prevVal) {
+      beginEditHoodSuppress();
+      try {
+        for (var pi = 0; pi < neighborhoodIn.options.length; pi++) {
+          if (neighborhoodIn.options[pi].value === wantVal) {
+            neighborhoodIn.selectedIndex = pi;
+            break;
+          }
+        }
+      } finally {
+        endEditHoodSuppress();
+      }
+      confirmEditHoodChangeIfNeeded(prevVal, wantVal, hoodLabel, function (cleared) {
+        if (cleared) {
+          finishNeighborhoodSelectionChange();
+        }
+      });
+      return true;
+    }
+    return applySelect();
+  }
+
+  if (neighborhoodIn) {
+    neighborhoodIn.addEventListener('change', function () {
+      if (editHoodChangeSuppress > 0) {
+        return;
+      }
+      var prevVal = editCommittedHoodVal;
+      var newVal = getNeighborhoodSelectValue();
+      if (!cfg.isEdit || newVal === prevVal) {
+        finishNeighborhoodSelectionChange();
+        return;
+      }
+      confirmEditHoodChangeIfNeeded(prevVal, newVal, getNeighborhoodLabel(), function (cleared) {
+        if (cleared) {
+          finishNeighborhoodSelectionChange();
+        }
+      });
     });
   }
   updatePreview();
@@ -698,15 +927,6 @@
     }
     var la = parseFloat(r.latitude);
     var ln = parseFloat(r.longitude);
-    if (cfg.isEdit) {
-      if (window.AddrMap && typeof window.AddrMap.showSavedLocation === 'function') {
-        if (isFinite(la) && isFinite(ln)) {
-          window.AddrMap.showSavedLocation(la, ln, 15);
-        }
-      }
-      showMsg('تم عرض موقع السجل على الخريطة.', false);
-      return;
-    }
     var latIn = document.getElementById('map-lat');
     var lngIn = document.getElementById('map-lng');
     if (latIn && r.latitude != null) { latIn.value = String(r.latitude); }
@@ -746,7 +966,17 @@
       if (cityAreaIn) { cityAreaIn.value = loc; }
     }
     if (cityAreaIn && cityAreaIn.value) {
-      loadCityBlocksForCurrentCity(hoodPart);
+      var blocksLoad = loadCityBlocksForCurrentCity(hoodPart);
+      if (cfg.isEdit && blocksLoad && typeof blocksLoad.then === 'function') {
+        blocksLoad.then(function () {
+          if (window.AddrMap && typeof window.AddrMap.showSavedLocation === 'function' && isFinite(la) && isFinite(ln)) {
+            window.AddrMap.showSavedLocation(la, ln, editMapZoom);
+          }
+          if (cfg.isEdit) {
+            editCommittedHoodVal = getNeighborhoodSelectValue();
+          }
+        });
+      }
     } else {
       resetNeighborhoodSelect();
     }
@@ -765,7 +995,7 @@
         String(r.pc_province) + ' ' + String(r.pc_area) + '-' + String(r.pc_city) + '-' + secDisp + ' ' + String(r.pc_property);
     }
     updateContextBar();
-    if (!opts.skipShabiyaMapReload && !cfg.isEdit && shabiyaSel && shabiyaSel.value && provinceIn) {
+    if (!opts.skipShabiyaMapReload && shabiyaSel && shabiyaSel.value && provinceIn) {
       try {
         var rowSbSv = findShabiyaRowForCurrentWilayah(String(shabiyaSel.value).trim());
         var codeSbSv = rowSbSv ? String(rowSbSv.code || '').trim() : '';
@@ -794,15 +1024,75 @@
     } catch (eGate) {}
     if (window.AddrMap && typeof window.AddrMap.showSavedLocation === 'function') {
       if (isFinite(la) && isFinite(ln)) {
-        window.AddrMap.showSavedLocation(la, ln, 15);
+        window.AddrMap.showSavedLocation(la, ln, cfg.isEdit ? editMapZoom : 15);
       }
     }
     try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eSv) {}
+    if (cfg.isEdit) {
+      editCommittedHoodVal = getNeighborhoodSelectValue();
+    }
+  }
+
+  /* Fill the hierarchy + postal segments from an already-registered address (the one
+     whose parcel contains the freshly placed point) and set the apartment/unit number,
+     WITHOUT touching the placed marker coordinates. Used by the duplicate modal when the
+     new entry is an apartment / separate building inside an existing property. */
+  function applyExistingPropertyContext(r, apartmentValue) {
+    if (cfg.isEdit || !r) { return; }
+    contextBarLiveFromMap = true;
+    contextBarWilayahPinned = false;
+    if (r.wilayah && wilayahSel && WIL_KEY[r.wilayah]) {
+      beginWilayahProgrammatic();
+      try { wilayahSel.value = r.wilayah; } finally { endWilayahProgrammatic(); }
+    }
+    syncProvinceFromWilayah();
+    if (provinceIn && r.pc_province) { provinceIn.value = String(r.pc_province); }
+    refillShabiyat();
+    if (shabiyaSel && r.shabiya) {
+      var sn = String(r.shabiya).trim();
+      var matchedSb = false;
+      for (var si = 0; si < shabiyaSel.options.length; si++) {
+        if (shabiyaSel.options[si].value === sn) {
+          shabiyaSel.selectedIndex = si;
+          matchedSb = true;
+          break;
+        }
+      }
+      if (!matchedSb) { shabiyaSel.value = sn; }
+    }
+    syncAreaFromShabiya();
+    if (areaIn && r.pc_area != null) { areaIn.value = String(r.pc_area); }
+    if (cityIn && r.pc_city != null) { cityIn.value = String(r.pc_city); }
+    if (sectorIn && r.pc_sector) { sectorIn.value = String(r.pc_sector).toUpperCase().slice(0, 2); }
+    var loc = r.locality ? String(r.locality) : '';
+    var hoodPart = '';
+    if (loc.indexOf(' | ') >= 0) {
+      var parts = loc.split(' | ');
+      if (cityAreaIn) { cityAreaIn.value = (parts[0] || '').trim(); }
+      hoodPart = (parts[1] || '').trim();
+    } else if (cityAreaIn) {
+      cityAreaIn.value = loc;
+    }
+    if (cityAreaIn && cityAreaIn.value) {
+      loadCityBlocksForCurrentCity(hoodPart);
+    } else {
+      resetNeighborhoodSelect();
+    }
+    var apt = document.getElementById('apartment_number');
+    if (apt) { apt.value = apartmentValue != null ? String(apartmentValue) : ''; }
+    updatePreview();
+    updateContextBar();
   }
 
   function gatherNewPayload() {
+    var parcelPayload = null;
+    if (window.MapParcel && typeof window.MapParcel.getGeoJSON === 'function') {
+      parcelPayload = window.MapParcel.getGeoJSON();
+    }
+    var aptEl = document.getElementById('apartment_number');
     return {
-      action: 'create',
+      action: cfg.isEdit && cfg.editId ? 'update' : 'create',
+      id: cfg.isEdit && cfg.editId ? cfg.editId : undefined,
       csrf_token: cfg.csrf,
       pc_province: provinceIn ? provinceIn.value : '',
       pc_area: areaIn ? parseInt(areaIn.value, 10) : 0,
@@ -810,16 +1100,18 @@
       pc_sector: sectorIn ? sectorIn.value : '',
       holder_name: (document.getElementById('holder_name') || {}).value || '',
       type: (document.getElementById('type') || {}).value || 'residential',
-      apartment_number: (document.getElementById('apartment_number') || {}).value || '',
+      apartment_number: aptEl ? (aptEl.value || '') : '',
       locality: buildLocality(),
       street_number: (document.getElementById('street_number') || {}).value || '',
       shabiya: shabiyaSel ? shabiyaSel.value || '' : '',
       map_lat: (document.getElementById('map-lat') || {}).value || '',
-      map_lng: (document.getElementById('map-lng') || {}).value || ''
+      map_lng: (document.getElementById('map-lng') || {}).value || '',
+      parcel_geojson: parcelPayload && parcelPayload.geojson ? JSON.stringify(parcelPayload.geojson) : '',
+      parcel_desc: parcelPayload ? (parcelPayload.desc || '') : ''
     };
   }
 
-  function resetAddFormFields() {
+  function resetAddFormFields(skipMapReset) {
     if (cfg.isEdit) { return; }
     contextBarLiveFromMap = false;
     contextBarWilayahPinned = false;
@@ -830,9 +1122,6 @@
     }
     syncProvinceFromWilayah();
     refillShabiyat(false);
-    if (window.AddrMap && typeof window.AddrMap.fitLibya === 'function') {
-      window.AddrMap.fitLibya();
-    }
     if (sectorIn) { sectorIn.value = 'S'; }
     if (cityIn) { cityIn.value = '1'; }
     var hn = document.getElementById('holder_name');
@@ -946,6 +1235,11 @@
       window.dispatchEvent(new Event('addr-map-clear-annotations'));
     } catch (_) {}
     refocusCurrentShabiyaOnMap();
+    if (window.AddrMap && typeof window.AddrMap.restoreDefaultBoundaryLayers === 'function') {
+      window.AddrMap.restoreDefaultBoundaryLayers();
+    } else if (window.AddrMap && typeof window.AddrMap.restoreBoundariesLayerPreference === 'function') {
+      window.AddrMap.restoreBoundariesLayerPreference();
+    }
     try {
       window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh'));
     } catch (_) {}
@@ -969,7 +1263,7 @@
   if (btnReset) {
     btnReset.addEventListener('click', function () {
       resetAddFormFields();
-      window.dispatchEvent(new Event('addr-map-reset'));
+      try { window.dispatchEvent(new Event('addr-map-reset')); } catch (eBtnRst) {}
       showMsg('أُعيدت الإدخالات.', false);
     });
   }
@@ -1101,7 +1395,7 @@
     var d = ev.detail;
     if (cityAreaIn && d.name) { cityAreaIn.value = String(d.name).trim(); }
     var cityIdFromMap = parseInt(d.cityId, 10) || 0;
-    if (!cfg.isEdit && !cityIdFromMap) {
+    if (!cityIdFromMap) {
       resetMapForHierarchyChange('city');
     }
     resetNeighborhoodSelect();
@@ -1112,29 +1406,18 @@
   });
 
   window.addEventListener('addr-block-select', function (ev) {
-    if (cfg.isEdit || !ev || !ev.detail) { return; }
+    if (!ev || !ev.detail) { return; }
     var d = ev.detail;
     var level = String(d.level || '');
     var id = parseInt(d.id, 10) || 0;
     if (!id || !neighborhoodIn || neighborhoodIn.tagName !== 'SELECT') { return; }
     var wantVal = level + ':' + id;
-    function trySelectBlock() {
-      for (var bi = 0; bi < neighborhoodIn.options.length; bi++) {
-        var oB = neighborhoodIn.options[bi];
-        if (oB.value === wantVal) {
-          neighborhoodIn.selectedIndex = bi;
-          syncSelectedBlockFromSelect();
-          showSelectedBlockGrid();
-          updateContextBar();
-          return true;
-        }
-      }
-      return false;
-    }
-    if (trySelectBlock()) { return; }
+    var hoodLbl = d.name ? String(d.name).trim() : '';
+    if (selectNeighborhoodByValue(wantVal, hoodLbl)) { return; }
     if (cityAreaIn && cityAreaIn.value) {
-      loadCityBlocksForCurrentCity(d.name ? String(d.name).trim() : '').then(function () {
-        trySelectBlock();
+      loadCityBlocksForCurrentCity(hoodLbl).then(function () {
+        selectNeighborhoodByValue(wantVal, hoodLbl);
+        try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eRf) {}
       });
     }
   });
@@ -1149,22 +1432,22 @@
     var n = ev.detail.neighborhood ? String(ev.detail.neighborhood).trim() : '';
     if (!n) { return; }
     if (neighborhoodIn.tagName === 'SELECT') {
-      var matched = false;
+      var matchedVal = '';
       for (var ni = 0; ni < neighborhoodIn.options.length; ni++) {
         var oN = neighborhoodIn.options[ni];
         if (!oN.value) { continue; }
         if (oN.textContent === n || oN.getAttribute('data-name') === n) {
-          neighborhoodIn.selectedIndex = ni;
-          matched = true;
+          matchedVal = oN.value;
           break;
         }
       }
-      if (!matched && cityAreaIn && cityAreaIn.value) {
+      if (!matchedVal && cityAreaIn && cityAreaIn.value) {
         loadCityBlocksForCurrentCity(n);
         return;
       }
-      syncSelectedBlockFromSelect();
-      showSelectedBlockGrid();
+      if (matchedVal) {
+        selectNeighborhoodByValue(matchedVal, n);
+      }
       if (!hasPlacedAddressMarker()) {
         flyToSelectedBlock();
       }
@@ -1172,6 +1455,128 @@
       neighborhoodIn.value = n;
     }
     updateContextBar();
+  });
+
+  /* Non-blocking duplicate warnings: a centered modal lets the user keep the placement
+     ("موافق على أي حال") or revert it ("إلغاء وإرجاع"). Triggers when the new point falls
+     inside a saved parcel, or the new parcel overlaps/contains a saved one — same hood. */
+  var dupWarnOverlay = document.getElementById('addr-dup-warn-overlay');
+  var dupWarnMessage = document.getElementById('addr-dup-warn-message');
+  var dupWarnConfirm = document.getElementById('addr-dup-warn-confirm');
+  var dupWarnCancel = document.getElementById('addr-dup-warn-cancel');
+  var dupWarnBackdrop = document.getElementById('addr-dup-warn-backdrop');
+  var dupWarnUnitBtn = document.getElementById('addr-dup-warn-unit');
+  var dupWarnUnitWrap = document.getElementById('addr-dup-warn-unit-wrap');
+  var dupWarnUnitInput = document.getElementById('addr-dup-warn-unit-input');
+  var dupWarnUnitApply = document.getElementById('addr-dup-warn-unit-apply');
+  var dupWarnRevert = null;
+  var dupWarnMatchedRow = null;
+
+  function closeDupWarnModal() {
+    if (!dupWarnOverlay) { return; }
+    dupWarnOverlay.hidden = true;
+    document.body.style.overflow = '';
+    dupWarnRevert = null;
+    dupWarnMatchedRow = null;
+    if (dupWarnUnitWrap) { dupWarnUnitWrap.hidden = true; }
+    if (dupWarnUnitInput) { dupWarnUnitInput.value = ''; }
+    if (dupWarnUnitBtn) { dupWarnUnitBtn.hidden = true; }
+  }
+
+  function openDupWarnModal(opts) {
+    if (!dupWarnOverlay || !dupWarnMessage) { return; }
+    opts = opts || {};
+    dupWarnMessage.textContent = opts.message || '';
+    dupWarnRevert = typeof opts.onRevert === 'function' ? opts.onRevert : null;
+    dupWarnMatchedRow = opts.matchedRow || null;
+    if (dupWarnUnitWrap) { dupWarnUnitWrap.hidden = true; }
+    if (dupWarnUnitInput) { dupWarnUnitInput.value = ''; }
+    if (dupWarnUnitBtn) { dupWarnUnitBtn.hidden = !dupWarnMatchedRow; }
+    dupWarnOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    if (dupWarnConfirm) { try { dupWarnConfirm.focus(); } catch (eFoc) {} }
+  }
+
+  if (dupWarnConfirm) {
+    dupWarnConfirm.addEventListener('click', closeDupWarnModal);
+  }
+  if (dupWarnBackdrop) {
+    dupWarnBackdrop.addEventListener('click', closeDupWarnModal);
+  }
+  if (dupWarnCancel) {
+    dupWarnCancel.addEventListener('click', function () {
+      var fn = dupWarnRevert;
+      closeDupWarnModal();
+      if (fn) { fn(); }
+    });
+  }
+  if (dupWarnUnitBtn) {
+    dupWarnUnitBtn.addEventListener('click', function () {
+      if (dupWarnUnitWrap) { dupWarnUnitWrap.hidden = false; }
+      if (dupWarnUnitInput) { try { dupWarnUnitInput.focus(); } catch (eUF) {} }
+    });
+  }
+  if (dupWarnUnitApply) {
+    dupWarnUnitApply.addEventListener('click', function () {
+      var val = dupWarnUnitInput ? String(dupWarnUnitInput.value || '').trim() : '';
+      if (!val) {
+        if (dupWarnUnitInput) { try { dupWarnUnitInput.focus(); } catch (eUF2) {} }
+        return;
+      }
+      var row = dupWarnMatchedRow;
+      closeDupWarnModal();
+      applyExistingPropertyContext(row, val);
+      showMsg('سيُسجَّل العنوان كشقة/مبنى ضمن العقار المسجّل مسبقاً: ' + val, false);
+    });
+  }
+
+  window.addEventListener('addr-address-marker-placed', function (ev) {
+    if (!window.AddrSaved || !ev || !ev.detail) { return; }
+    var la = parseFloat(ev.detail.lat);
+    var ln = parseFloat(ev.detail.lng);
+    if (!isFinite(la) || !isFinite(ln)) { return; }
+    var matched = window.AddrSaved.findContainingAddress(la, ln);
+    if (matched) {
+      openDupWarnModal({
+        message: 'الموقع المُحدّد يقع داخل حدود عقار مسجّل مسبقاً في نفس الحي.',
+        matchedRow: matched,
+        onRevert: function () {
+          if (window.MapCore && typeof window.MapCore.clearAddressMarker === 'function') {
+            window.MapCore.clearAddressMarker();
+          }
+          try { window.dispatchEvent(new CustomEvent('addr-marker-cta-refresh')); } catch (eR) {}
+        }
+      });
+    }
+  });
+
+  window.addEventListener('addr-parcel-finished', function (ev) {
+    if (!window.AddrSaved || !ev || !ev.detail || !ev.detail.latlngs) { return; }
+    var ring = window.AddrSaved.latlngsToRing(ev.detail.latlngs);
+    if (!ring || ring.length < 4) { return; }
+    var poly = [ring];
+    var hit = window.AddrSaved.parcelOverlapsLoaded(poly);
+    if (!hit) {
+      var loadedRows = window.AddrSaved.getLoaded();
+      for (var i = 0; i < loadedRows.length; i++) {
+        var row = loadedRows[i];
+        if (row.lat !== null && window.AddrSaved.polygonContains(poly, row.lat, row.lng)) {
+          hit = true;
+          break;
+        }
+      }
+    }
+    if (hit) {
+      var drawnLayer = ev.detail.layer || null;
+      openDupWarnModal({
+        message: 'حدود الأرض المرسومة تتداخل مع عقار مسجّل مسبقاً في نفس الحي.',
+        onRevert: function () {
+          if (window.MapParcel && typeof window.MapParcel.removeParcelLayer === 'function') {
+            window.MapParcel.removeParcelLayer(drawnLayer);
+          }
+        }
+      });
+    }
   });
 
   /* Color palette for parcel drawing — routes to map/parcel via custom event */
@@ -1209,6 +1614,12 @@
       window.setTimeout(function () {
         if (window.MapCore && window.MapCore.map) {
           window.MapCore.map.invalidateSize(false);
+          if (typeof window.MapCore.refreshMapMaskForView === 'function') {
+            window.MapCore.refreshMapMaskForView();
+          }
+          if (typeof window.MapCore.updateMapClipOverlays === 'function') {
+            window.MapCore.updateMapClipOverlays();
+          }
         }
       }, 320);
     }
@@ -1259,6 +1670,43 @@
     }
   }
 
+  function initSavedParcelBoundary() {
+    if (!cfg.savedParcel || !cfg.savedParcel.geojson) {
+      return;
+    }
+    function tryLoad() {
+      if (window.MapParcel && typeof window.MapParcel.loadFromGeoJSON === 'function') {
+        window.MapParcel.loadFromGeoJSON(
+          cfg.savedParcel.geojson,
+          cfg.savedParcel.desc || '',
+          null,
+          false
+        );
+        return true;
+      }
+      return false;
+    }
+    if (!tryLoad()) {
+      window.addEventListener('load', function () {
+        setTimeout(tryLoad, 120);
+      });
+    }
+  }
+  initSavedParcelBoundary();
+
+  if (cfg.isEdit && cfg.editRecord) {
+    function bootEditRecord() {
+      applySavedRecord(cfg.editRecord);
+    }
+    if (document.readyState === 'complete') {
+      setTimeout(bootEditRecord, 300);
+    } else {
+      window.addEventListener('load', function () {
+        setTimeout(bootEditRecord, 300);
+      });
+    }
+  }
+
   /* Public surface for sibling modules (save.js, edit.js). */
   window.AddressForm = {
     cfg: cfg,
@@ -1267,6 +1715,7 @@
     applySavedRecord: applySavedRecord,
     resetAddFormFields: resetAddFormFields,
     resetAddFormParcelOnly: resetAddFormParcelOnly,
+    applyExistingPropertyContext: applyExistingPropertyContext,
     resetAfterSaveToShabiya: resetAfterSaveToShabiya,
     dispatchNewSceneWithinCurrentShubiya: dispatchNewSceneWithinCurrentShubiya,
     stripAddressNewIdFromLocation: stripAddressNewIdFromLocation,

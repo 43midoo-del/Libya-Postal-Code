@@ -21,22 +21,42 @@ $neLat = $b['north'];
 $neLng = $b['east'];
 $initialLat = (string) $row['latitude'];
 $initialLng = (string) $row['longitude'];
-$maxZoom = (int) $mapCfg['max_zoom'];
+$offlineCfg = \App\Assets::offlineConfig();
+$maxZoom = (int) min($mapCfg['max_zoom'], $offlineCfg['offline_max_zoom'] ?? 17);
 $maxZoomSat = (int) ($mapCfg['max_zoom_satellite'] ?? 17);
+$preferOffline = !empty($offlineCfg['prefer_offline']);
+$allowRemoteTiles = !empty($offlineCfg['allow_remote_tiles']);
+$defaultBase = $preferOffline ? 'offline' : 'osm';
+$offlineMaxZoom = (int) ($offlineCfg['offline_max_zoom'] ?? 17);
+$focusCenter = $offlineCfg['focus_center'] ?? [32.7558, 22.6478];
 
 $shabiyatJson = json_encode($libya['shabiyat'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
-$extraHead = '<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous">';
+$extraHead = '<link rel="stylesheet" href="' . htmlspecialchars(\App\Assets::leafletCss(), ENT_QUOTES, 'UTF-8') . '">';
 $extraFooter  = '<script type="application/json" id="libya-shabiyat-data">' . $shabiyatJson . '</script>';
-$extraFooter .= '<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>';
+$extraFooter .= '<script src="' . htmlspecialchars(\App\Assets::leafletJs(), ENT_QUOTES, 'UTF-8') . '"></script>';
 $extraFooter .= '<script src="js/map/core.js" defer></script>';
 $extraFooter .= '<script src="js/map/labels.js" defer></script>';
 $extraFooter .= '<script src="js/map/shabiyat.js" defer></script>';
+$extraFooter .= '<script src="js/map/parcel.js" defer></script>';
 $extraFooter .= '<script src="js/addresses/full_edit.js" defer></script>';
+$parcelInitJson = json_encode([
+    'geojson' => $row['parcel_geojson'] ?? null,
+    'desc'    => $row['parcel_desc'] ?? '',
+], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+$extraFooter .= '<script type="application/json" id="addr-edit-parcel-data">' . $parcelInitJson . '</script>';
 
 require dirname(__DIR__) . '/partials/head.php';
 require dirname(__DIR__) . '/partials/app_header.php';
 
-$curWilayah = (string) ($row['wilayah'] ?? 'tripolitania');
+$curWilayah = (string) ($row['wilayah'] ?? '');
+if ($curWilayah === '' || !in_array($curWilayah, ['barqa', 'tripolitania', 'fezzan'], true)) {
+    $pcProvRow = strtoupper(trim((string) ($row['pc_province'] ?? '')));
+    $curWilayah = match ($pcProvRow) {
+        'B'     => 'barqa',
+        'F'     => 'fezzan',
+        default => 'tripolitania',
+    };
+}
 $curShabiya = (string) ($row['shabiya'] ?? '');
 ?>
 <main id="main-content" class="map-page main-panel">
@@ -53,6 +73,8 @@ $curShabiya = (string) ($row['shabiya'] ?? '');
         <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
         <input type="hidden" name="map_lat" id="map-lat" value="<?= htmlspecialchars($initialLat, ENT_QUOTES, 'UTF-8') ?>">
         <input type="hidden" name="map_lng" id="map-lng" value="<?= htmlspecialchars($initialLng, ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="parcel_geojson" id="parcel-geojson" value="<?= htmlspecialchars((string) ($row['parcel_geojson'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        <input type="hidden" name="parcel_desc" id="parcel-desc-hidden" value="<?= htmlspecialchars((string) ($row['parcel_desc'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
 
         <div class="addresses-filters" style="margin-bottom:0.75rem">
             <div class="addresses-filters__row">
@@ -157,7 +179,19 @@ $curShabiya = (string) ($row['shabiya'] ?? '');
             data-shabiyat-url="data/libya-shabiyat.geojson"
             data-skip-neighbor-boundaries="1"
             data-satellite="0"
+            data-prefer-offline="<?= $preferOffline ? '1' : '0' ?>"
+            data-allow-remote-tiles="<?= $allowRemoteTiles ? '1' : '0' ?>"
+            data-default-base="<?= htmlspecialchars($defaultBase, ENT_QUOTES, 'UTF-8') ?>"
+            data-offline-max-zoom="<?= (int) $offlineMaxZoom ?>"
+            data-focus-lat="<?= htmlspecialchars((string) $focusCenter[0], ENT_QUOTES, 'UTF-8') ?>"
+            data-focus-lng="<?= htmlspecialchars((string) $focusCenter[1], ENT_QUOTES, 'UTF-8') ?>"
+            data-focus-zoom="14"
+            data-tile-keep-buffer="2"
+            data-tile-update-idle="1"
             data-read-only="0"
+            data-marker-icon="<?= htmlspecialchars(\App\Assets::url('vendor/leaflet/1.9.4/images/marker-icon.png'), ENT_QUOTES, 'UTF-8') ?>"
+            data-marker-icon-2x="<?= htmlspecialchars(\App\Assets::url('vendor/leaflet/1.9.4/images/marker-icon-2x.png'), ENT_QUOTES, 'UTF-8') ?>"
+            data-marker-shadow="<?= htmlspecialchars(\App\Assets::url('vendor/leaflet/1.9.4/images/marker-shadow.png'), ENT_QUOTES, 'UTF-8') ?>"
             data-initial-lat="<?= htmlspecialchars($initialLat, ENT_QUOTES, 'UTF-8') ?>"
             data-initial-lng="<?= htmlspecialchars($initialLng, ENT_QUOTES, 'UTF-8') ?>"
             style="display:none"
@@ -167,19 +201,37 @@ $curShabiya = (string) ($row['shabiya'] ?? '');
         <div class="map-base-layer-bar" dir="rtl">
             <span class="map-base-layer-bar__label">الخلفية:</span>
             <div class="map-base-layer-switch" role="group" aria-label="نوع الخريطة">
+                <button type="button" id="addr-map-btn-offline" class="map-base-btn is-active"><span class="map-base-btn__label">محلي</span></button>
+                <?php if ($allowRemoteTiles): ?>
                 <button type="button" id="addr-map-btn-sat" class="map-base-btn"><span class="map-base-btn__label">أقمار</span></button>
-                <button type="button" id="addr-map-btn-osm" class="map-base-btn is-active"><span class="map-base-btn__label">خريطة</span></button>
+                <button type="button" id="addr-map-btn-osm" class="map-base-btn"><span class="map-base-btn__label">إنترنت</span></button>
+                <?php endif; ?>
                 <button type="button" id="addr-map-btn-fit" class="map-base-btn map-base-btn--ghost"><span class="map-base-btn__label">ليبيا</span></button>
             </div>
         </div>
 
         <div id="map" class="map-canvas" role="application" aria-label="خريطة تعديل الموقع" style="min-height:420px;height:55vh"></div>
 
-        <p class="muted" style="margin:0.6rem 0">انقر على الخريطة لتحريك علامة الموقع وتحديث الإحداثيات.</p>
+        <aside class="gis-toolbox gis-toolbox--modern gis-toolbox--compact gis-toolbox--parcel" dir="rtl" aria-label="رسم حدود القطعة" style="margin-top:0.75rem">
+            <div class="gis-parcel-actions">
+                <button type="button" class="gis-tool-btn" data-map-tool="parcel">رسم الحدود</button>
+                <button type="button" class="gis-tool-btn gis-tool-btn--secondary" id="btn-parcel-finish" disabled>إنهاء الشكل</button>
+                <button type="button" class="gis-tool-btn gis-tool-btn--ghost" id="btn-parcel-cancel" disabled>إلغاء</button>
+            </div>
+            <label class="form-label" for="map-parcel-desc">وصف الحد (اختياري)</label>
+            <textarea id="map-parcel-desc" rows="2" maxlength="500" placeholder="يُعرض عند مرور المؤشر على الحد"><?= htmlspecialchars((string) ($row['parcel_desc'] ?? ''), ENT_QUOTES, 'UTF-8') ?></textarea>
+        </aside>
+
+        <p class="muted" style="margin:0.6rem 0">انقر على الخريطة لتحريك علامة الموقع وتحديث الإحداثيات. استخدم «رسم الحدود» لتحديث حدود الأرض.</p>
 
         <div class="form-actions" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.8rem">
             <button type="submit" class="btn btn-primary">حفظ التعديلات</button>
             <a class="btn btn-ghost" href="index.php?r=address_show&id=<?= (int) $row['id'] ?>">إلغاء</a>
+            <form method="post" action="index.php?r=address_delete" class="inline-form js-confirm-delete" style="display:inline">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
+                <button type="submit" class="btn btn-ghost">حذف السجل</button>
+            </form>
         </div>
     </form>
 </main>

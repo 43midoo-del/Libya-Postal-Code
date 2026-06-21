@@ -122,14 +122,16 @@ final class AddressesController extends BaseController
             echo json_encode(['ok' => false, 'message' => 'غير مصرّح.'], JSON_UNESCAPED_UNICODE);
             return;
         }
-        $wilayah = isset($_GET['wilayah']) ? trim((string) $_GET['wilayah']) : '';
-        $shabiya = isset($_GET['shabiya']) ? trim((string) $_GET['shabiya']) : '';
-        $type    = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
-        $limit   = max(1, min(500, (int) ($_GET['limit'] ?? 200)));
+        $wilayah  = isset($_GET['wilayah']) ? trim((string) $_GET['wilayah']) : '';
+        $shabiya  = isset($_GET['shabiya']) ? trim((string) $_GET['shabiya']) : '';
+        $locality = isset($_GET['locality']) ? trim((string) $_GET['locality']) : '';
+        $type     = isset($_GET['type']) ? trim((string) $_GET['type']) : '';
+        $limit    = max(1, min(500, (int) ($_GET['limit'] ?? 200)));
         $res = AddressSearch::query([
-            'wilayah' => $wilayah,
-            'shabiya' => $shabiya,
-            'type'    => $type,
+            'wilayah'  => $wilayah,
+            'shabiya'  => $shabiya,
+            'locality' => $locality,
+            'type'     => $type,
         ], 1, $limit);
         echo json_encode(['ok' => true, 'results' => $res['rows'], 'total' => $res['total']], JSON_UNESCAPED_UNICODE);
     }

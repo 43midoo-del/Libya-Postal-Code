@@ -160,8 +160,11 @@ final class Statistics
         $limit = max(1, min(20, $limit));
         $pdo = Database::getInstance()->getPdo();
         $stmt = $pdo->prepare(
-            'SELECT id, postal_code, owner_name, type, wilayah, shabiya, created_at
-             FROM addresses ORDER BY id DESC LIMIT :lim'
+            'SELECT a.id, a.postal_code, a.owner_name, a.type, a.wilayah, a.shabiya, a.locality, a.created_at,
+                    u.name AS created_by_name
+             FROM addresses a
+             LEFT JOIN users u ON u.id = a.created_by
+             ORDER BY a.id DESC LIMIT :lim'
         );
         $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
         $stmt->execute();
@@ -174,7 +177,11 @@ final class Statistics
                 'type'        => (string) $r['type'],
                 'wilayah'     => isset($r['wilayah']) ? (string) $r['wilayah'] : '',
                 'shabiya'     => isset($r['shabiya']) ? (string) $r['shabiya'] : '',
+                'locality'    => isset($r['locality']) ? (string) $r['locality'] : '',
                 'created_at'  => isset($r['created_at']) ? (string) $r['created_at'] : '',
+                'created_by_name' => isset($r['created_by_name']) && $r['created_by_name'] !== null
+                    ? (string) $r['created_by_name']
+                    : '',
             ];
         }
         return $out;
