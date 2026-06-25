@@ -29,6 +29,16 @@
       state.markerModePending = false;
       MC.syncMarkerModeButton();
     }
+    if (state.drawMode === 'parcel') {
+      if (MC.hideBoundariesForAddressPick) {
+        MC.hideBoundariesForAddressPick();
+      }
+    } else if (MC.syncBoundaryLabelsForAddressScene) {
+      MC.syncBoundaryLabelsForAddressScene();
+    }
+    if (typeof MC.syncMapCrosshairCursor === 'function') {
+      MC.syncMapCrosshairCursor();
+    }
   }
 
   function clearParcelDraft(clearPreviewOnly) {

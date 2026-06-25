@@ -356,6 +356,7 @@
     activeTilePanBounds: null,
     activeAreaPanBounds: null,
     pilotAreaPlacementActive: false,
+    pilotAreaBoundariesHidden: false,
     focusedAreaBounds: null,
     focusedAreaFeature: null,
     pilotAreaExitBusy: false
@@ -458,9 +459,10 @@
 
   var BLANK_TILE_URL = resolveAssetUrl('data/tiles/blank-256.png');
   var SEA_TILE_URL = resolveAssetUrl('data/tiles/sea-256.png');
+  var SEA_SAT_TILE_URL = resolveAssetUrl('data/tiles/sea-sat-256.png');
   var LAND_TILE_URL = resolveAssetUrl('data/tiles/land-256.png');
 
-  var TILE_URL_REV = '19';
+  var TILE_URL_REV = '21';
 
   var tilePerfOpts = {
     updateWhenIdle: tileUpdateIdle,
@@ -512,7 +514,7 @@
   );
   var satLayer = L.tileLayer(
     'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    Object.assign({ attribution: esriAttribution, crossOrigin: 'anonymous', errorTileUrl: SEA_TILE_URL }, tileBaseOptsSat)
+    Object.assign({ attribution: esriAttribution, crossOrigin: 'anonymous', errorTileUrl: SEA_SAT_TILE_URL }, tileBaseOptsSat)
   );
   /* Offline base layer — backed by the local MBTiles file (Phase 1).
    * When a tile is missing it returns 204 and the SW falls back automatically. */
@@ -536,7 +538,7 @@
         attribution: 'Libya Postal (offline) / Esri',
         maxNativeZoom: offlineSatMaxZ,
         maxZoom: offlineSatMaxZ,
-        errorTileUrl: SEA_TILE_URL
+        errorTileUrl: SEA_SAT_TILE_URL
       },
       tileBaseOptsSat
     )
@@ -866,6 +868,8 @@
     if (activeLayer && typeof activeLayer.redraw === 'function') {
       activeLayer.redraw();
     }
+    applyTileCoveragePanLock({ snap: true, animate: false });
+    scheduleOfflineTileRefresh();
   }
 
   function toggleLabelsOverlay() {
@@ -1055,8 +1059,11 @@
 
   function syncOfflineTileLayerBounds(panBounds) {
     var tileBounds = bounds;
-    if (panBounds && panBounds.isValid() && !isMapDrilldownView()) {
-      tileBounds = panBounds;
+    if (panBounds && panBounds.isValid()) {
+      var useZoneBounds = !isMapDrilldownView() || isPilotShabiyaActive();
+      if (useZoneBounds) {
+        tileBounds = panBounds;
+      }
     }
     [offlineLayer, offlineSatLayer].forEach(function (ly) {
       if (!ly || !ly.options) {
@@ -1640,7 +1647,7 @@
     state.userOverviewLocked = false;
     state.markerModePending = false;
     syncMarkerModeButton();
-    setMapMarkerModeChrome(false);
+    syncMapCrosshairCursor();
     clearAddressMarker();
 
     if (window.MapCore && typeof window.MapCore.resetDraw === 'function') {
@@ -1809,6 +1816,7 @@
       placeAddressMarker: placeAddressMarker,
       setFields: setFields,
       syncMarkerModeButton: syncMarkerModeButton,
+      syncMapCrosshairCursor: syncMapCrosshairCursor,
       syncMarkerCtaReveal: syncMarkerCtaReveal,
       syncDashboardHud: syncDashboardHud,
       showApiMsg: showApiMsg,
@@ -1996,7 +2004,7 @@
         }
         state.markerModePending = !!on;
         syncMarkerModeButton();
-        setMapMarkerModeChrome(state.markerModePending);
+        syncMapCrosshairCursor();
         if (state.markerModePending) {
           var wrapOn = document.getElementById('map-marker-cta-slot');
           if (wrapOn) {
@@ -2309,7 +2317,7 @@
     }
     state.markerModePending = false;
     syncMarkerModeButton();
-    setMapMarkerModeChrome(false);
+    syncMapCrosshairCursor();
     if (window.MapCore && typeof window.MapCore.resetDraw === 'function') {
       window.MapCore.resetDraw();
     }
@@ -2383,7 +2391,7 @@
     }
     btn.classList.toggle('is-active', state.markerModePending);
     btn.setAttribute('aria-pressed', state.markerModePending ? 'true' : 'false');
-    setMapMarkerModeChrome(state.markerModePending);
+    syncMapCrosshairCursor();
   }
 
   var MARKER_CTA_MIN_ZOOM = 13;
@@ -2504,7 +2512,7 @@
     if (!eligible && state.markerModePending && !keepPilotAreaMarkerMode && !hasMarkerCtaShabiyaContext()) {
       state.markerModePending = false;
       syncMarkerModeButton();
-      setMapMarkerModeChrome(false);
+      syncMapCrosshairCursor();
     }
   }
 
@@ -2793,14 +2801,21 @@
         new CustomEvent('addr-address-marker-placed', { detail: { lat: ll.lat, lng: ll.lng } })
       );
     } catch (ePlace) {}
+    if (window.MapCore && typeof window.MapCore.syncBoundaryLabelsForAddressScene === 'function') {
+      window.MapCore.syncBoundaryLabelsForAddressScene();
+    }
+    if (window.MapCore && typeof window.MapCore.applyBoundariesLayerVisibility === 'function') {
+      window.MapCore.applyBoundariesLayerVisibility();
+    }
   }
 
   var addressPlacementUiBound = false;
 
-  function setMapMarkerModeChrome(active) {
+  function syncMapCrosshairCursor() {
     var container = map && typeof map.getContainer === 'function' ? map.getContainer() : null;
     if (container) {
-      container.classList.toggle('map-canvas--marker-mode', !!active);
+      var crosshairActive = !!state.markerModePending || state.drawMode === 'parcel';
+      container.classList.toggle('map-canvas--crosshair-mode', crosshairActive);
     }
   }
 
@@ -2827,7 +2842,7 @@
       placeAddressMarker(ll);
       state.markerModePending = false;
       syncMarkerModeButton();
-      setMapMarkerModeChrome(false);
+      syncMapCrosshairCursor();
       syncMarkerCtaReveal();
     }
   }

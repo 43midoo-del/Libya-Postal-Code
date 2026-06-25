@@ -7,9 +7,7 @@ if (!function_exists('imagecreatetruecolor')) {
     exit(1);
 }
 $im = imagecreatetruecolor(256, 256);
-/* Flat sea colour matching the real offline tiles (#aad3df) so that missing
- * maritime tiles blend seamlessly with rendered sea instead of showing a
- * dark navy wedge. */
+/* Flat OSM-style sea colour (#aad3df) for the vector offline base map only. */
 $col = imagecolorallocate($im, 170, 211, 223);
 imagefilledrectangle($im, 0, 0, 255, 255, $col);
 imagepng($im, $out);

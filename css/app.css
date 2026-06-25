@@ -1271,6 +1271,12 @@ body.addr-dashboard-one-screen .addr-sidebar__form-actions {
   padding-top: 0.4rem;
   font-size: 0.68rem;
 }
+#saved-addr-toggles[hidden] {
+  display: none !important;
+}
+#saved-addr-toggles[hidden] {
+  display: none !important;
+}
 .gis-toolbox--compact .gis-palette {
   gap: 0.25rem;
   margin-top: 0.3rem;
@@ -1552,10 +1558,8 @@ body.addr-dashboard-one-screen .addr-sidebar__form-actions {
   position: relative;
   z-index: 1;
 }
-.map-canvas-wrap--mgr .map-canvas--marker-mode {
-  cursor: crosshair;
-}
-.map-canvas-wrap--mgr .map-canvas--marker-mode .leaflet-grab {
+.map-canvas-wrap--mgr .leaflet-container.map-canvas--crosshair-mode,
+.map-canvas-wrap--mgr .leaflet-container.map-canvas--crosshair-mode.leaflet-grab {
   cursor: crosshair;
 }
 .map-canvas-wrap--mgr .map-marker-cta-float button.map-base-btn--marker-cta:not(:disabled):not(.is-active) {

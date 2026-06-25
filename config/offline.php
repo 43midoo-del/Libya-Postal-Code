@@ -33,7 +33,7 @@ return [
      */
     'tile_zones' => [
         ['zmin' => 5, 'zmax' => 8, 'south' => 19.4, 'west' => 9.2, 'north' => 33.45, 'east' => 25.15],
-        ['zmin' => 9, 'zmax' => 12, 'south' => 30.79, 'west' => 21.92, 'north' => 32.95, 'east' => 23.25],
+        ['zmin' => 9, 'zmax' => 12, 'south' => 30.79, 'west' => 21.92, 'north' => 33.08, 'east' => 23.35],
         ['zmin' => 13, 'zmax' => 16, 'south' => 32.68, 'west' => 22.48, 'north' => 32.88, 'east' => 22.84],
         ['zmin' => 17, 'zmax' => 17, 'south' => 32.728, 'west' => 22.595, 'north' => 32.792, 'east' => 22.725],
     ],

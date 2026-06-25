@@ -92,10 +92,16 @@
   }
 
   function showToggles() {
-    if (togglesEl) { togglesEl.hidden = false; }
+    if (togglesEl) {
+      togglesEl.hidden = false;
+      togglesEl.removeAttribute('hidden');
+    }
   }
   function hideToggles() {
-    if (togglesEl) { togglesEl.hidden = true; }
+    if (togglesEl) {
+      togglesEl.hidden = true;
+      togglesEl.setAttribute('hidden', '');
+    }
   }
 
   function setPointsVisible(on) {
@@ -124,20 +130,37 @@
     hideToggles();
   }
 
+  function formatSavedAddressTooltip(row) {
+    if (!row) {
+      return '';
+    }
+    function part(val) {
+      var s = String(val == null ? '' : val).trim();
+      return s || '—';
+    }
+    return part(row.postal_code) + ' - ' + part(row.owner_name) + ' - ' + part(row.parcel_desc);
+  }
+
+  function bindSavedAddressTooltip(layer, row) {
+    var tip = formatSavedAddressTooltip(row);
+    if (!tip || !layer || typeof layer.bindTooltip !== 'function') {
+      return;
+    }
+    layer.bindTooltip(tip, { sticky: true, direction: 'top' });
+  }
+
   function renderRow(row) {
     var la = parseFloat(row.latitude);
     var ln = parseFloat(row.longitude);
     var entry = { id: parseInt(row.id, 10) || 0, lat: null, lng: null, polygons: [], row: row };
 
-    var tip = '';
-    if (row.postal_code) { tip = String(row.postal_code); }
-    if (row.owner_name) { tip += (tip ? ' — ' : '') + String(row.owner_name); }
+    var tip = formatSavedAddressTooltip(row);
 
     if (isFinite(la) && isFinite(ln)) {
       entry.lat = la;
       entry.lng = ln;
       var mk = L.circleMarker([la, ln], MARKER_STYLE);
-      if (tip) { mk.bindTooltip(tip, { sticky: true }); }
+      bindSavedAddressTooltip(mk, row);
       mk.addTo(pointLayer);
     }
 
@@ -147,7 +170,7 @@
       if (window.ParcelDisplay && typeof window.ParcelDisplay.render === 'function') {
         var layer = window.ParcelDisplay.render(parcelLayer, gj, {
           style: PARCEL_STYLE,
-          desc: row.parcel_desc || tip || ''
+          desc: tip
         });
         if (!layer) {
           drawPolygonsFallback(entry.polygons, tip);
@@ -176,7 +199,7 @@
         latlngs.push(pts);
       }
       var poly = L.polygon(latlngs, PARCEL_STYLE);
-      if (tip) { poly.bindTooltip(tip, { sticky: true }); }
+      if (tip) { poly.bindTooltip(tip, { sticky: true, direction: 'top' }); }
       poly.addTo(parcelLayer);
     }
   }
@@ -343,6 +366,20 @@
   window.addEventListener('addr-map-clear-annotations', function () {
     clear();
   });
+
+  window.addEventListener('addr-map-reset', function () {
+    clear();
+  });
+
+  window.addEventListener('addr-block-select', function (ev) {
+    if (!ev || !ev.detail) { return; }
+    var lvl = String(ev.detail.level || '');
+    if (lvl === 'area' || lvl === 'street') {
+      showToggles();
+    }
+  });
+
+  hideToggles();
 
   if (pointsToggle) {
     pointsToggle.addEventListener('change', function () {

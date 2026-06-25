@@ -20,12 +20,11 @@ final class TileController extends BaseController
 {
     private static ?string $blankPng256 = null;
     private static ?string $seaPng256 = null;
+    private static ?string $seaSatPng256 = null;
     private static ?string $landPng256 = null;
 
     /** Legacy 1x1 fallback when blank-256.png is missing. */
     private const BLANK_PNG_1X1 = "\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82";
-    /** Near-empty satellite tiles over the sea (no shoreline detail). */
-    private const SAT_EMPTY_TILE_MAX = 950;
 
     private static function blankPng(): string
     {
@@ -61,6 +60,24 @@ final class TileController extends BaseController
         return self::$seaPng256;
     }
 
+    /** Dark ocean placeholder for offline Esri satellite (matches World Imagery sea tone). */
+    private static function seaSatPng(): string
+    {
+        if (self::$seaSatPng256 !== null) {
+            return self::$seaSatPng256;
+        }
+        $path = dirname(__DIR__) . '/data/tiles/sea-sat-256.png';
+        if (is_file($path)) {
+            $body = file_get_contents($path);
+            if (is_string($body) && strlen($body) > 80) {
+                self::$seaSatPng256 = $body;
+                return self::$seaSatPng256;
+            }
+        }
+        self::$seaSatPng256 = self::seaPng();
+        return self::$seaSatPng256;
+    }
+
     private static function landPng(): string
     {
         if (self::$landPng256 !== null) {
@@ -91,9 +108,9 @@ final class TileController extends BaseController
         return ((float) $x + 0.5) / $n * 360.0 - 180.0;
     }
 
-    private function isSatMaritimeTile(int $z, int $y): bool
+    private function isSatMaritimeTile(int $z, int $x, int $y): bool
     {
-        return self::tileCenterLat($z, $y) >= 28.5;
+        return $this->isMapMaritimeTile($z, $x, $y);
     }
 
     /** Missing base-map tiles over sea should use sea-256, not transparent blank. */
@@ -118,10 +135,50 @@ final class TileController extends BaseController
         return 'land';
     }
 
-    private function sendPngBody(string $body, int $status, bool $cacheable = false): void
+    private function isValidSatTileBody(string $body): bool
+    {
+        if (strlen($body) < 500) {
+            return false;
+        }
+        return str_starts_with($body, "\x89PNG\r\n\x1a\n") || str_starts_with($body, "\xff\xd8\xff");
+    }
+
+    private function isWithinDernaSatRepairZone(int $z, int $x, int $y): bool
+    {
+        if ($z < 9 || $z > 12) {
+            return false;
+        }
+        $lat = self::tileCenterLat($z, $y);
+        $lng = self::tileCenterLng($z, $x);
+        return $lat >= 30.79 && $lat <= 33.08 && $lng >= 21.92 && $lng <= 23.35;
+    }
+
+    /** @return string|null */
+    private function fetchEsriSatTile(int $z, int $x, int $y): ?string
+    {
+        $url = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'
+            . $z . '/' . $y . '/' . $x;
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 12,
+            CURLOPT_USERAGENT      => 'LibyaPostalOffline/1.0',
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTPHEADER     => ['Accept: image/jpeg,image/png,*/*'],
+        ]);
+        $body = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code !== 200 || !is_string($body) || !$this->isValidSatTileBody($body)) {
+            return null;
+        }
+        return $body;
+    }
+
+    private function sendTileBody(string $body, string $mime, int $status, bool $cacheable = false): void
     {
         http_response_code($status);
-        header('Content-Type: image/png');
+        header('Content-Type: ' . $mime);
         header('Content-Length: ' . strlen($body));
         if ($cacheable) {
             header('ETag: "' . sha1($body) . '"');
@@ -133,6 +190,11 @@ final class TileController extends BaseController
         if ($status !== 204) {
             echo $body;
         }
+    }
+
+    private function sendPngBody(string $body, int $status, bool $cacheable = false): void
+    {
+        $this->sendTileBody($body, 'image/png', $status, $cacheable);
     }
 
     public function serve(): void
@@ -167,18 +229,28 @@ final class TileController extends BaseController
 
         $tile = $svc->getTileXYZ($z, $x, $y);
         $format = $svc->meta('format') ?: 'png';
-        $satMaritime = $layer === 'sat' && $this->isSatMaritimeTile($z, $y);
+        $satMaritime = $layer === 'sat' && $this->isSatMaritimeTile($z, $x, $y);
         $mapPlaceholder = $layer === 'map' ? $this->mapPlaceholderKind($z, $x, $y) : null;
+        if ($tile === null && $layer === 'sat' && $this->isWithinDernaSatRepairZone($z, $x, $y)) {
+            $fetched = $this->fetchEsriSatTile($z, $x, $y);
+            if ($fetched !== null) {
+                try {
+                    $svc->putTileXYZ($z, $x, $y, $fetched);
+                } catch (\Throwable) {
+                }
+                $tile = $fetched;
+            }
+        }
         if ($tile === null) {
-            $this->sendBlank(200, $satMaritime, $mapPlaceholder);
+            $this->sendBlank(200, $satMaritime, $mapPlaceholder, $layer === 'sat');
             return;
         }
         if ($format === 'png' && !TileValidator::isValidPngTile($tile, $z)) {
-            $this->sendBlank(200, $satMaritime, $mapPlaceholder);
+            $this->sendBlank(200, $satMaritime, $mapPlaceholder, $layer === 'sat');
             return;
         }
-        if ($satMaritime && (TileValidator::isBlankTile($tile) || strlen($tile) <= self::SAT_EMPTY_TILE_MAX)) {
-            $this->sendBlank(200, true);
+        if ($satMaritime && TileValidator::isBlankTile($tile)) {
+            $this->sendBlank(200, true, null, true);
             return;
         }
         $mime = match ($format) {
@@ -193,17 +265,19 @@ final class TileController extends BaseController
             http_response_code(304);
             return;
         }
-        $this->sendPngBody($tile, 200, true);
+        $this->sendTileBody($tile, $mime, 200, true);
     }
 
-    private function sendBlank(int $status, bool $sea = false, ?string $mapPlaceholder = null): void
+    private function sendBlank(int $status, bool $sea = false, ?string $mapPlaceholder = null, bool $satSea = false): void
     {
         if ($mapPlaceholder === 'sea') {
             $blank = self::seaPng();
         } elseif ($mapPlaceholder === 'land') {
             $blank = self::landPng();
+        } elseif ($sea || $satSea) {
+            $blank = $satSea ? self::seaSatPng() : self::seaPng();
         } else {
-            $blank = $sea ? self::seaPng() : self::blankPng();
+            $blank = self::blankPng();
         }
         $this->sendPngBody($blank, $status, false);
     }

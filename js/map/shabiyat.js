@@ -1172,17 +1172,73 @@
     state.selectedShabiyaLayer = null;
   }
 
-  function ensureCityBoundariesLayerOnMap() {
+  function shouldShowCityBoundariesOnMap() {
+    if (state.boundariesLayerWanted === false) {
+      return false;
+    }
+    if (state.boundariesTemporarilyHidden) {
+      return false;
+    }
+    if (state.pilotAreaBoundariesHidden || state.pilotAreaPlacementActive) {
+      return false;
+    }
+    return true;
+  }
+
+  function shouldHideBoundaryLabelsForAddressScene() {
+    if (state.boundariesTemporarilyHidden) {
+      return true;
+    }
+    if (state.pilotAreaBoundariesHidden || state.pilotAreaPlacementActive) {
+      return true;
+    }
+    if (state.markerModePending) {
+      return true;
+    }
+    if (
+      state.drawMode === 'parcel' &&
+      (state.pilotAreaPlacementActive || state.pilotAreaBoundariesHidden || state.boundariesTemporarilyHidden)
+    ) {
+      return true;
+    }
+    if (typeof MC.hasPlacedAddressMarker === 'function' && MC.hasPlacedAddressMarker()) {
+      if (state.pilotAreaPlacementActive || state.pilotAreaBoundariesHidden || state.boundariesTemporarilyHidden) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function syncBoundaryLabelsForAddressScene() {
+    if (!state.boundaryLabelLayer) {
+      return;
+    }
+    var hide = shouldHideBoundaryLabelsForAddressScene();
+    state.boundaryLabelLayer.eachLayer(function (marker) {
+      var el = marker.getElement && marker.getElement();
+      if (el) {
+        el.style.display = hide ? 'none' : '';
+      }
+    });
+  }
+  MC.syncBoundaryLabelsForAddressScene = syncBoundaryLabelsForAddressScene;
+
+  function applyCityBoundariesLayerVisibility() {
     if (!state.cityBoundariesLayer) {
       return;
     }
-    if (state.boundariesLayerWanted === false) {
-      return;
+    if (shouldShowCityBoundariesOnMap()) {
+      if (!map.hasLayer(state.cityBoundariesLayer)) {
+        state.cityBoundariesLayer.addTo(map);
+      }
+    } else if (map.hasLayer(state.cityBoundariesLayer)) {
+      map.removeLayer(state.cityBoundariesLayer);
     }
-    state.boundariesTemporarilyHidden = false;
-    if (!map.hasLayer(state.cityBoundariesLayer)) {
-      state.cityBoundariesLayer.addTo(map);
-    }
+    syncBoundaryLabelsForAddressScene();
+  }
+
+  function ensureCityBoundariesLayerOnMap() {
+    applyCityBoundariesLayerVisibility();
   }
   MC.ensureCityBoundariesLayerOnMap = ensureCityBoundariesLayerOnMap;
 
@@ -1596,19 +1652,7 @@
 
   function hidePilotDernaBoundariesForAreaPlacement() {
     state.pilotAreaBoundariesHidden = true;
-    if (state.cityBoundariesLayer && map.hasLayer(state.cityBoundariesLayer)) {
-      map.removeLayer(state.cityBoundariesLayer);
-    }
-    if (state.boundaryLabelLayer) {
-      state.boundaryLabelLayer.eachLayer(function (marker) {
-        if (marker._addrLayerLevel === 'area') {
-          var el = marker.getElement && marker.getElement();
-          if (el) {
-            el.style.display = 'none';
-          }
-        }
-      });
-    }
+    applyCityBoundariesLayerVisibility();
     var wrap = document.querySelector('.map-canvas-wrap--mgr');
     if (wrap) {
       wrap.classList.add('map-canvas-wrap--pilot-area-placement');
@@ -1624,17 +1668,7 @@
   }
 
   function restorePilotAreaLabelVisibility() {
-    if (!state.boundaryLabelLayer) {
-      return;
-    }
-    state.boundaryLabelLayer.eachLayer(function (marker) {
-      if (marker._addrLayerLevel === 'area') {
-        var el = marker.getElement && marker.getElement();
-        if (el) {
-          el.style.display = '';
-        }
-      }
-    });
+    syncBoundaryLabelsForAddressScene();
   }
 
   function collectAllPilotAreaFeaturesFromCityLayer() {
@@ -2525,6 +2559,7 @@
   MC.setBoundariesLayerEnabled = setBoundariesLayerEnabled;
   MC.hideBoundariesForAddressPick = hideBoundariesForAddressPick;
   MC.restoreBoundariesLayerPreference = restoreBoundariesLayerPreference;
+  MC.applyBoundariesLayerVisibility = applyBoundariesLayerVisibility;
   MC.restoreDefaultBoundaryLayers = restoreDefaultBoundaryLayers;
   MC.restoreShabiyatLayerIfHidden = restoreShabiyatLayerIfHidden;
   MC.hideShabiyatLayerForCityView = hideShabiyatLayerForCityView;
@@ -2788,6 +2823,7 @@
   function hideBoundariesForAddressPick() {
     state.boundariesTemporarilyHidden = true;
     applyBoundariesLayerVisibility();
+    syncBoundaryLabelsForAddressScene();
   }
 
   function restoreDefaultBoundaryLayers() {
@@ -2812,15 +2848,7 @@
   function applyBoundariesLayerVisibility() {
     var wantBoundaries = state.boundariesLayerWanted !== false;
     var wantOnMap = wantBoundaries && !state.boundariesTemporarilyHidden;
-    if (state.cityBoundariesLayer) {
-      if (wantBoundaries) {
-        if (!map.hasLayer(state.cityBoundariesLayer)) {
-          state.cityBoundariesLayer.addTo(map);
-        }
-      } else if (map.hasLayer(state.cityBoundariesLayer)) {
-        map.removeLayer(state.cityBoundariesLayer);
-      }
-    }
+    applyCityBoundariesLayerVisibility();
     if (state.shabiyatLayer && !state.shabiyatLayerHiddenForCity) {
       if (wantOnMap) {
         if (!map.hasLayer(state.shabiyatLayer)) {
@@ -4424,10 +4452,12 @@
     resetBoundaryLabelPinLayout();
     if (shouldAnchorPlaceLabelsExactly()) {
       layoutShabiyaPlaceLabelsExact();
+      syncBoundaryLabelsForAddressScene();
       return;
     }
     var placedRects = collectPinLabelRects(state.boundaryLabelLayer);
     layoutPinLabelsInLayer(state.cityPlacesLayer, placedRects, { gridRange: 156 });
+    syncBoundaryLabelsForAddressScene();
   }
 
   function schedulePlaceLabelLayout() {
@@ -4708,6 +4738,9 @@
       }
       if (MC.applyTileCoveragePanLock) {
         MC.applyTileCoveragePanLock({ snap: false, animate: false });
+      }
+      if (MC.scheduleOfflineTileRefresh) {
+        MC.scheduleOfflineTileRefresh();
       }
       if (MC.refreshMapMaskForView) {
         MC.refreshMapMaskForView();

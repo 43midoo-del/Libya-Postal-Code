@@ -17,7 +17,7 @@ const USER_AGENT = 'LibyaPostalOffline/1.0 (+https://libya-postal.local; contact
 
 function isValidSatTile(string $body): bool
 {
-    if (strlen($body) < 800) {
+    if (strlen($body) < 500) {
         return false;
     }
     return str_starts_with($body, "\x89PNG\r\n\x1a\n") || str_starts_with($body, "\xff\xd8\xff");
@@ -65,8 +65,8 @@ $zones = [
         'name'  => 'derna-shabiya-b2-sat',
         'south' => 30.79,
         'west'  => 21.92,
-        'north' => 32.95,
-        'east'  => 23.25,
+        'north' => 33.08,
+        'east'  => 23.35,
         'zmin'  => 9,
         'zmax'  => 12,
     ],

@@ -208,7 +208,6 @@ $csrf = \App\Csrf::getToken();
             <div class="addr-save-success__actions">
                 <button type="button" class="btn btn--scene btn--pill-footer" id="addr-save-success-print">طباعة</button>
                 <button type="button" class="btn btn--scene btn--pill-footer btn--primary-glow" id="addr-save-success-new-scene">مشهد جديد</button>
-                <button type="button" class="btn btn--scene btn--pill-footer btn--footer-soft" id="addr-save-success-close">إغلاق</button>
             </div>
         </div>
     </div>

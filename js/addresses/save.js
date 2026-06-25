@@ -188,10 +188,6 @@
   }
 
   /* Success-overlay action buttons */
-  var btnSaveOverlayClose = document.getElementById('addr-save-success-close');
-  if (btnSaveOverlayClose) {
-    btnSaveOverlayClose.addEventListener('click', closeSaveSuccessOverlay);
-  }
   var btnSaveBackdrop = document.getElementById('addr-save-success-backdrop');
   if (btnSaveBackdrop) {
     btnSaveBackdrop.addEventListener('click', closeSaveSuccessOverlay);
